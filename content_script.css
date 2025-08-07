@@ -1,0 +1,170 @@
+/* --- ★★★ このファイル全体を置き換えてください ★★★ --- */
+
+/* チャット欄上部のボタンを格納するコンテナ */
+#enhancer-controls {
+    padding: 4px 16px;
+    border-bottom: 1px solid var(--yt-live-chat-border-color);
+    display: flex;
+    justify-content: flex-end; /* ボタンを右寄せに配置 */
+    gap: 8px; /* ボタン間の隙間 */
+    background-color: var(--yt-live-chat-primary-background-color);
+}
+
+/* 翻訳・コメントのオンオフボタンの共通スタイル */
+#toggle-translation-btn, #toggle-flow-btn, #ylc-settings-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 50%; /* 円形 */
+    cursor: pointer;
+    font-size: 18px; /* アイコンのサイズ */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--yt-spec-badge-chip-background);
+    color: var(--yt-spec-text-secondary);
+    transition: background-color 0.2s, color 0.2s, opacity 0.2s;
+    opacity: 0.7;
+}
+
+/* ホバー時のスタイル */
+#toggle-translation-btn:hover, #toggle-flow-btn:hover, #ylc-settings-btn:hover {
+    opacity: 1;
+}
+
+/* 機能が有効(enabled)な時のスタイル */
+#toggle-translation-btn.enabled, #toggle-flow-btn.enabled {
+    background-color: #3ea6ff; /* オンを分かりやすく青色に */
+    color: white; /* アイコンの色を白に */
+    opacity: 1;
+}
+
+/* --- チャット内翻訳のスタイル --- */
+.inline-translation-container {
+    display: block;
+    font-size: 0.95em;
+    margin: 6px 0 0 4px;
+    padding: 4px 8px;
+    border-left: 3px solid #007bff;
+    color: #87ceeb;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background-color: rgba(0,0,0,0.1);
+    border-radius: 0 4px 4px 0;
+}
+.inline-translation-container.error {
+    color: #ff8a80;
+    border-left-color: #ff8a80;
+}
+/* --- フローコメントのコンテナ --- */
+#yt-flow-comment-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 90%;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 100;
+}
+/* --- フローコメントの基本スタイル --- */
+.flow-comment {
+    position: absolute;
+    white-space: nowrap;
+    text-shadow: 1.5px 1.5px 3px rgba(0,0,0,0.9);
+    font-weight: bold;
+    will-change: transform;
+    padding: 4px 12px;
+    border-radius: 4px;
+}
+.flow-comment .flow-translation {
+    color: #a7d7f0;
+    margin-left: 0.5em;
+    font-size: 0.9em;
+}
+.flow-comment img {
+    height: 1.2em;
+    vertical-align: middle;
+    margin: 0 0.1em;
+}
+
+/* --- ★★★ ここからが追加/修正箇所 ★★★ --- */
+/* スーパーチャットのフロースタイル */
+.flow-superchat {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.flow-superchat .superchat-author,
+.flow-superchat .superchat-amount {
+    display: inline;
+    margin-right: 8px;
+    opacity: 0.9;
+}
+.flow-superchat .superchat-message {
+    margin-top: 4px;
+    font-size: 1.1em; /* メッセージを少し大きく */
+}
+
+/* メンバーシップ記念コメントのフロースタイル */
+.flow-membership {
+    padding: 6px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background-color: rgba(0, 0, 0, 0.3); /* 少し背景色を追加 */
+}
+/* --- ★★★ ここまでが追加/修正箇所 ★★★ --- */
+
+
+/* --- 設定パネルのスタイル --- */
+#ylc-settings-panel {
+    display: none;
+    flex-direction: column;
+    position: fixed;
+    top: 50px;
+    right: 50px;
+    transform: none;
+    width: 460px;
+    height: 650px;
+    max-height: calc(100vh - 100px);
+    background-color: var(--yt-spec-menu-background, #ffffff);
+    border: 1px solid var(--yt-spec-10-percent-layer, #4d4d4d);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    z-index: 99999;
+    resize: both;
+    overflow: auto;
+}
+#ylc-settings-header {
+    background-color: var(--yt-spec-brand-background-solid, #333);
+    color: var(--yt-spec-brand-text-solid, white);
+    padding: 10px 15px;
+    font-weight: bold;
+    cursor: move;
+    position: relative;
+    border-radius: 11px 11px 0 0;
+    flex-shrink: 0;
+}
+#ylc-settings-close-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--yt-spec-brand-text-solid, #aaa);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0 5px;
+    line-height: 1;
+}
+#ylc-settings-close-btn:hover {
+    opacity: 0.7;
+}
+#ylc-settings-iframe {
+    flex-grow: 1;
+    border: none;
+    width: 100%;
+    height: 100%;
+}

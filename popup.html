@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>設定</title>
+<style>
+    body {
+        width: 400px; /* 少し幅を広げます */
+        padding: 10px 15px 15px;
+        font-family: sans-serif;
+        background-color: #2b2b2b;
+        color: #f0f0f0;
+    }
+    .tab-nav {
+        display: flex;
+        border-bottom: 2px solid #555;
+        margin-bottom: 15px;
+    }
+    .tab-btn {
+        padding: 10px 15px;
+        cursor: pointer;
+        background: none;
+        border: none;
+        color: #aaa;
+        font-weight: bold;
+        font-size: 14px;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+    }
+    .tab-btn.active {
+        color: #fff;
+        border-bottom-color: #3ea6ff;
+    }
+    .tab-content {
+        display: none;
+    }
+    .tab-content.active {
+        display: block;
+    }
+    h4 {
+        border-bottom: 1px solid #555;
+        padding-bottom: 8px;
+        margin-top: 20px;
+        margin-bottom: 15px;
+        font-size: 16px;
+        color: #ffffff;
+    }
+    .form-group { margin-bottom: 15px; }
+    .form-row { display: flex; gap: 10px; }
+    .col { flex: 1; }
+    label { display: block; margin-bottom: 5px; font-size: 14px; font-weight: bold; }
+    input::placeholder { color: #888; }
+    input[type="text"], input[type="password"], input[type="number"], select, textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid #666;
+        border-radius: 4px;
+        background-color: #3c3c3c;
+        color: #f0f0f0;
+        font-family: sans-serif;
+    }
+    input[type="color"] { width: 100%; height: 38px; padding: 2px; border: 1px solid #666; border-radius: 4px; background-color: transparent; }
+    .api-key-group { display: none; }
+    .badge { font-weight: normal; }
+    .note { font-size: 12px; color: #999; font-weight: normal; }
+    .profile-actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 10px; }
+    .btn { padding: 8px 12px; border-radius: 4px; border: 1px solid #666; background-color: #4f4f4f; color: #fff; cursor: pointer; }
+    .btn:hover { background-color: #5f5f5f; }
+    .btn-danger { background-color: #8c3a3a; }
+    .btn-danger:hover { background-color: #a14444; }
+</style>
+</head>
+<body>
+
+    <div class="tab-nav">
+        <button class="tab-btn active" data-tab="tab-general">基本設定</button>
+        <button class="tab-btn" data-tab="tab-ng">NG設定</button>
+        <button class="tab-btn" data-tab="tab-profiles">プロファイル</button>
+    </div>
+
+    <div id="tab-general" class="tab-content active">
+        <h4>基本設定</h4>
+        <div class="form-group">
+            <label for="translator">翻訳サービス</label>
+            <select id="translator">
+                <option value="google">Google翻訳 (APIキー不要)</option>
+                <option value="gemini">Gemini</option>
+                <option value="deepl">DeepL</option>
+            </select>
+        </div>
+        <div id="gemini-key-group" class="api-key-group">
+            <div class="form-group">
+                <label for="geminiApiKey">Gemini APIキー 1</label>
+                <input type="password" id="geminiApiKey" placeholder="Gemini APIキー 1">
+            </div>
+            <div class="form-group">
+                <label for="geminiApiKey2">Gemini APIキー 2 <span class="note">(オプション)</span></label>
+                <input type="password" id="geminiApiKey2" placeholder="2つ目のGemini APIキー (交互に使用されます)">
+            </div>
+        </div>
+        <div id="deepl-key-group" class="api-key-group">
+            <label for="deeplApiKey">DeepL APIキー</label>
+            <input type="password" id="deeplApiKey" placeholder="DeepL APIキー (Free or Pro)">
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" id="enableGoogleTranslateFallback"> API上限超過時にGoogle翻訳を利用</label>
+        </div>
+
+        <h4>機能のオン・オフ</h4>
+        <div class="form-group">
+            <label><input type="checkbox" id="enableInlineTranslation"> チャット欄に翻訳を表示</label>
+            <br>
+            <label><input type="checkbox" id="enableFlowComments"> 画面にコメントを流す</label>
+        </div>
+
+        <h4>フローコメント設定</h4>
+        <div class="form-group">
+            <label for="flowContent">流す内容</label>
+            <select id="flowContent">
+                <option value="translation">翻訳文のみ</option>
+                <option value="original">原文のみ</option>
+                <option value="both">原文と翻訳文</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <div class="col"><label for="flowTime">速度(秒)</label><input type="number" id="flowTime" min="1"></div>
+            <div class="col"><label for="fontSize">サイズ(px)</label><input type="number" id="fontSize" min="1"></div>
+        </div>
+        <div class="form-group">
+            <label for="opacity">透過度: <span class="badge" id="opacityValue"></span></label>
+            <input type="range" id="opacity" min="0" max="1" step="0.1" style="width:100%;">
+        </div>
+        <div class="form-group">
+            <label for="position">表示方法</label>
+            <select id="position"><option value="top_priority">上から優先</option><option value="bottom_priority">下から優先</option><option value="random">ランダム</option></select>
+        </div>
+        <div class="form-row">
+            <div class="col"><label for="flowMarginTop">上マージン(px)</label><input type="number" id="flowMarginTop" min="0"></div>
+            <div class="col"><label for="flowMarginBottom">下マージン(px)</label><input type="number" id="flowMarginBottom" min="0"></div>
+        </div>
+        <div class="form-group">
+            <label for="flowFontFamily">フォント</label>
+            <select id="flowFontFamily"><option value="'ヒラギノ角ゴ Pro W3', 'Hiragino Kaku Gothic Pro', 'メイリオ', Meiryo, sans-serif">ゴシック体 (標準)</option><option value="'ヒラギノ明朝 Pro W3', 'Hiragino Mincho Pro', 'ＭＳ Ｐ明朝', 'MS PMincho', serif">明朝体</option><option value="'MS PGothic', sans-serif">MS Pゴシック</option><option value="Verdana, sans-serif">Verdana</option><option value="Arial, sans-serif">Arial</option><option value="Georgia, serif">Georgia</option></select>
+        </div>
+        <div class="form-group">
+            <label for="customFontFamily">自由記述フォント <span class="note">(こちらが優先されます)</span></label>
+            <input type="text" id="customFontFamily" placeholder="例: 'Noto Sans JP', '游ゴシック体'">
+        </div>
+        <h4>フローコメント色設定</h4>
+        <div class="col"><label for="normalColor">通常</label><input type="color" id="normalColor"></div>
+                    <div class="col"><label for="memberColor">メンバー</label><input type="color" id="memberColor"></div>
+                    <div class="col"><label for="moderatorColor">モデレーター</label><input type="color" id="moderatorColor"></div>
+                    <div class="col"><label for="superchatColor">スーパーチャット</label><input type="color" id="superchatColor"></div>
+                    <div class="col"><label for="membershipColorFlow">新メンバー</label><input type="color" id="membershipColorFlow"></div>
+            </div>
+    </div>
+
+    <div id="tab-ng" class="tab-content">
+        <h4>NG設定</h4>
+        <div class="form-group">
+            <label for="ngUsers">NGユーザー <span class="note">(1行に1人)</span></label>
+            <textarea id="ngUsers" rows="8" placeholder="NGにしたいユーザー名を入力"></textarea>
+        </div>
+        <div class="form-group">
+            <label for="ngWords">NGワード <span class="note">(1行に1つ)</span></label>
+            <textarea id="ngWords" rows="8" placeholder="NGにしたい単語を入力"></textarea>
+        </div>
+    </div>
+
+    <div id="tab-profiles" class="tab-content">
+        <h4>プロファイル管理</h4>
+        <div class="form-group">
+            <label for="profileName">プロファイル名</label>
+            <input type="text" id="profileName" placeholder="保存・削除するプロファイル名">
+        </div>
+        <div class="profile-actions">
+            <button id="saveProfileBtn" class="btn">現在の設定を保存</button>
+            <button id="deleteProfileBtn" class="btn btn-danger">選択したプロファイルを削除</button>
+        </div>
+        <hr style="border-color:#555; margin: 20px 0;">
+        <div class="form-group">
+            <label for="profileSelector">保存済みプロファイル</label>
+            <div class="profile-actions">
+                <select id="profileSelector"></select>
+                <button id="loadProfileBtn" class="btn">読み込む</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

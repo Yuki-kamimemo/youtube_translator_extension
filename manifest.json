@@ -1,0 +1,58 @@
+{
+    "manifest_version": 3,
+    "name": "YouTube Live Chat Enhancer",
+    "version": "3.1.1",
+    "description": "YouTubeライブチャットを翻訳し、画面上にコメントを流す機能を提供します。",
+    "permissions": [
+        "storage"
+    ],
+    "action": {
+        "default_title": "チャット設定を開く",
+        "default_icon": {
+            "16": "images/icon16.png",
+            "48": "images/icon48.png",
+            "128": "images/icon128.png"
+        }
+    },
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://www.youtube.com/*"
+            ],
+            "js": [
+                "translation.js",
+                "flow.js",
+                "content_script.js"
+            ],
+            "css": [
+                "content_script.css"
+            ],
+            "all_frames": true
+        }
+    ],
+    "host_permissions": [
+        "*://www.youtube.com/*",
+        "https://*.googleapis.com/*",
+        "https://api-free.deepl.com/*",
+        "https://translate.googleapis.com/*"
+    ],
+    "icons": {
+        "16": "images/icon16.png",
+        "48": "images/icon48.png",
+        "128": "images/icon128.png"
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "popup.html",
+                "popup.js"
+            ],
+            "matches": [
+                "*://www.youtube.com/*"
+            ]
+        }
+    ]
+}
