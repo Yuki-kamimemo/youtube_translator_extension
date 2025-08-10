@@ -130,7 +130,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                 apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
                 
-                const prompt = `あなたは、海外のYouTubeライブ配信やネット文化に精通したプロの翻訳者です。以下のチャットコメントを、日本の視聴者が読んで自然に感じる、生き生きとした口語的な日本語に翻訳してください。ネットスラング、略語、絵文字のニュアンスも汲み取って、元の感情や雰囲気が伝わるように訳してください。返答は、いかなる追加の説明や前置き（例：「翻訳結果：」）も付けず、翻訳された日本語テキストそのものだけを返してください。コメント：「${text}」`;
+                const prompt = `あなたは、海外のYouTubeライブ配信やネット文化に精通したプロの翻訳者です。以下のチャットコメントを、日本の視聴者が読んで自然に感じる口語的な日本語に翻訳してください。ネットスラング、略語、絵文字のニュアンスも汲み取って、元の感情や雰囲気が伝わるように訳してください。返答は、いかなる追加の説明や前置き（例：「翻訳結果：」）も付けず、翻訳された日本語テキストそのものだけを返してください。コメント：「${text}」`;
                 
                 fetchOptions = {
                     method: 'POST',
