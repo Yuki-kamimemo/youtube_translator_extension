@@ -228,8 +228,6 @@ function startChatObserver(chatItemsEl) {
         'YT-LIVE-CHAT-PAID-MESSAGE-RENDERER',
         'YT-LIVE-CHAT-MEMBERSHIP-ITEM-RENDERER',
     ];
-    // ★追加: 既存のコメントも処理する
-    chatItemsEl.querySelectorAll(targetNodeTypes.join(',')).forEach(processNewCommentNode);
 
     chatObserver = new MutationObserver(mutations => {
         mutations.forEach(m => m.addedNodes.forEach(node => {
