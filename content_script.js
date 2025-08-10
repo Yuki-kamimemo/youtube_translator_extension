@@ -19,6 +19,7 @@ const DEFAULTS = {
     translator: 'gemini', geminiApiKey: '', geminiApiKey2: '', deeplApiKey: '', enableInlineTranslation: true,
     enableGoogleTranslateFallback: true, enableFlowComments: true, flowContent: 'translation',
     flowTime: 8, fontSize: 24, opacity: 0.9, position: 'top_priority',
+    strokeWidth: 1.5, strokeColor: '#000000',
     flowFontFamily: "'ヒラギノ角ゴ Pro W3', 'Hiragino Kaku Gothic Pro', 'メイリオ', Meiryo, sans-serif",
     customFontFamily: '', flowMarginTop: 10, flowMarginBottom: 10,
     normalColor: '#FFFFFF', memberColor: '#28a745', moderatorColor: '#007bff',

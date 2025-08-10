@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // ★ 追加: 連続した呼び出しを間引くdebounce関数
     function debounce(func, delay) {
         let timeoutId;
         return function(...args) {
@@ -26,6 +25,10 @@ document.addEventListener('DOMContentLoaded', () => {
         opacity: document.getElementById('opacity'),
         opacityValue: document.getElementById('opacityValue'),
         position: document.getElementById('position'),
+        // ★★★ ここからが追加箇所 ★★★
+        strokeWidth: document.getElementById('strokeWidth'),
+        strokeColor: document.getElementById('strokeColor'),
+        // ★★★ ここまでが追加箇所 ★★★
         flowFontFamily: document.getElementById('flowFontFamily'),
         customFontFamily: document.getElementById('customFontFamily'),
         flowMarginTop: document.getElementById('flowMarginTop'),
@@ -35,9 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
         moderatorColor: document.getElementById('moderatorColor'),
         superchatColor: document.getElementById('superchatColor'),
         membershipColorFlow: document.getElementById('membershipColorFlow'),
-        // ★★★ ここからが追加箇所 ★★★
         dictionary: document.getElementById('dictionary'),
-        // ★★★ ここまでが追加箇所 ★★★
         ngUsers: document.getElementById('ngUsers'),
         ngWords: document.getElementById('ngWords'),
         profileName: document.getElementById('profileName'),
@@ -51,14 +52,15 @@ document.addEventListener('DOMContentLoaded', () => {
         translator: 'google', geminiApiKey: '', geminiApiKey2: '', deeplApiKey: '',
         enableGoogleTranslateFallback: true, enableInlineTranslation: true, enableFlowComments: true,
         flowContent: 'translation', flowTime: 8, fontSize: 24, opacity: 0.9, position: 'top_priority',
+        // ★★★ ここからが追加箇所 ★★★
+        strokeWidth: 1.5, strokeColor: '#000000',
+        // ★★★ ここまでが追加箇所 ★★★
         flowFontFamily: "'ヒラギノ角ゴ Pro W3', 'Hiragino Kaku Gothic Pro', 'メイリオ', Meiryo, sans-serif",
         customFontFamily: '', flowMarginTop: 10, flowMarginBottom: 10,
         normalColor: '#FFFFFF', memberColor: '#28a745', moderatorColor: '#007bff',
         superchatColor: '#FFFFFF',
         membershipColorFlow: '#00e676',
-        // ★★★ ここからが追加箇所 ★★★
         dictionary: '', 
-        // ★★★ ここまでが追加箇所 ★★★
         ngUsers: '', ngWords: '',
         profiles: {},
     };
@@ -90,7 +92,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return settings;
     }
 
-    // ★ 変更: 保存処理を300ミリ秒遅延させる
     const debouncedSaveSettings = debounce(() => {
         chrome.storage.sync.set(getSettingsFromForm());
     }, 300);
@@ -141,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.sync.get('profiles', (data) => {
             if (data.profiles && data.profiles[name]) {
                 loadSettings(data.profiles[name]);
-                debouncedSaveSettings(); // 読み込んだ設定を保存
+                debouncedSaveSettings();
                 alert(`「${name}」を読み込みました。`);
             }
         });
@@ -168,33 +169,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- 初期化処理 ---
     Object.keys(elements).filter(k => k !== 'profiles' && elements[k]).forEach(key => {
         const element = elements[key];
         if (element.id && !element.id.includes('Group') && !element.id.includes('Value')) {
-            // ★ 変更: イベント発火時に直接保存するのではなく、debounce化した関数を呼び出す
             element.addEventListener('input', debouncedSaveSettings);
         }
     });
     
     elements.translator.addEventListener('change', (e) => {
         toggleApiKeyInput(e.target.value);
-        debouncedSaveSettings(); // この変更は即時保存
+        debouncedSaveSettings();
     });
     elements.opacity.addEventListener('input', (e) => { elements.opacityValue.textContent = e.target.value; });
     
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'sync') return;
 
-        // 変更があった設定項目をループで処理
         for (let [key, { newValue }] of Object.entries(changes)) {
             const element = elements[key];
-            // 対応するUI要素があれば、その値を更新
             if (element) {
                 if (element.type === 'checkbox') {
                     element.checked = newValue;
                 } else if (key !== 'profiles') { 
-                    // 他の要素も更新するが、プロファイル自体は除外
                     element.value = newValue;
                 }
             }

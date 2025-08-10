@@ -70,7 +70,25 @@ function flowComment(data) {
     el.style.opacity = '0';
     el.style.position = 'absolute';
     el.style.top = '-9999px';
+    el.style.fontWeight = 'bold';
+    el.style.willChange = 'transform';
     
+    // ★★★ ここからが修正箇所 ★★★
+    // 元のドロップシャドウと、新しい縁取りを組み合わせる
+    const dropShadow = '1.5px 1.5px 3px rgba(0,0,0,0.9)';
+    const width = Number(settings.strokeWidth) || 0;
+    const color = settings.strokeColor || '#000000';
+    
+    let textShadows = [dropShadow];
+    if (width > 0) {
+        textShadows.push(`-${width}px -${width}px 0 ${color}`);
+        textShadows.push(`${width}px -${width}px 0 ${color}`);
+        textShadows.push(`-${width}px  ${width}px 0 ${color}`);
+        textShadows.push(`${width}px  ${width}px 0 ${color}`);
+    }
+    el.style.textShadow = textShadows.join(', ');
+    // ★★★ ここまでが修正箇所 ★★★
+
     if (data.specialType === 'superchat') {
         el.classList.add('flow-superchat');
         el.style.backgroundColor = data.bgColor;
