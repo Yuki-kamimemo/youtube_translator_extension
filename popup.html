@@ -75,7 +75,7 @@
 
     <div class="tab-nav">
         <button class="tab-btn active" data-tab="tab-general">基本設定</button>
-        <button class="tab-btn" data-tab="tab-ng">NG設定</button>
+        <button class="tab-btn" data-tab="tab-dictionary">単語登録</button> <button class="tab-btn" data-tab="tab-ng">NG設定</button>
         <button class="tab-btn" data-tab="tab-profiles">プロファイル</button>
     </div>
 
@@ -155,7 +155,14 @@
                     <div class="col"><label for="membershipColorFlow">新メンバー</label><input type="color" id="membershipColorFlow"></div>
             </div>
     </div>
-
+    
+    <div id="tab-dictionary" class="tab-content">
+        <h4>単語登録</h4>
+        <div class="form-group">
+            <label for="dictionary">登録リスト <span class="note">「元の単語,翻訳後の単語」の形式で1行に1つ入力</span></label>
+            <textarea id="dictionary" rows="12" placeholder="例: Holo,ホロ&#x0a;Gura,ぐら"></textarea>
+        </div>
+    </div>
     <div id="tab-ng" class="tab-content">
         <h4>NG設定</h4>
         <div class="form-group">

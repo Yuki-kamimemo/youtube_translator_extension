@@ -24,6 +24,7 @@ const DEFAULTS = {
     normalColor: '#FFFFFF', memberColor: '#28a745', moderatorColor: '#007bff',
     superchatColor: '#FFFFFF',
     membershipColorFlow: '#00e676',
+    dictionary: '',
     ngUsers: '', ngWords: '',
 };
 

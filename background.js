@@ -1,28 +1,49 @@
-// ★★★ ここからが修正箇所 ★★★
 // Geminiのレート制限を管理するための変数
 let geminiRequestTimestamps = [];
 let lastUsedGeminiKeyIndex = 0; // 最後に使用したGeminiキーのインデックス
 
-// --- ここからが翻訳キャッシュ機能の追加箇所 ---
 const translationCache = new Map();
 const CACHE_EXPIRY_MS = 5 * 60 * 1000; // キャッシュの有効期間（5分）
 
-/**
- * 定期的に古いキャッシュを削除するタイマー
- * 1分ごとに実行
- */
 setInterval(() => {
     const now = Date.now();
     for (const [key, value] of translationCache.entries()) {
         if (now - value.timestamp > CACHE_EXPIRY_MS) {
             translationCache.delete(key);
-            // console.log(`[Cache] Expired cache deleted for: ${key}`); // デバッグ用
         }
     }
 }, 60 * 1000);
-// --- ここまでが翻訳キャッシュ機能の追加箇所 ---
-// ★★★ ここまでが修正箇所 ★★★
 
+// ★★★ ここからが追加箇所 ★★★
+/**
+ * 登録された単語辞書を使ってテキストを前処理（置換）する
+ * @param {string} text - 元のテキスト
+ * @param {string} dictionaryStr - 'original,translation\n...' 形式の辞書文字列
+ * @returns {string} - 置換後のテキスト
+ */
+function preprocessWithDictionary(text, dictionaryStr) {
+    if (!dictionaryStr || !text) {
+        return text;
+    }
+    const lines = dictionaryStr.split('\n').filter(line => line.includes(','));
+    let processedText = text;
+    
+    // 長い単語から先に置換するために、キーの長さでソートする
+    const dictionary = lines.map(line => {
+        const parts = line.split(',');
+        return { original: parts[0].trim(), translated: parts.slice(1).join(',').trim() };
+    }).filter(item => item.original && item.translated)
+      .sort((a, b) => b.original.length - a.original.length);
+
+    for (const item of dictionary) {
+        // 大小文字を区別せずに置換する
+        const regex = new RegExp(item.original.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
+        processedText = processedText.replace(regex, item.translated);
+    }
+    
+    return processedText;
+}
+// ★★★ ここまでが追加箇所 ★★★
 
 /**
  * 無料Google翻訳（非公式）を使って翻訳を実行する関数
@@ -37,7 +58,6 @@ async function translateWithGoogle(text) {
         const data = await response.json();
         const translation = data[0]?.[0]?.[0];
         if (translation) {
-            // ★ 修正: 翻訳成功時にキャッシュへ保存
             translationCache.set(text, { translation, timestamp: Date.now() });
             return { translation };
         } else {
@@ -70,32 +90,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         const { text } = request;
 
-        // --- ここからが翻訳キャッシュ機能の追加箇所 ---
-        // 1. キャッシュを確認する
         if (translationCache.has(text)) {
             const cached = translationCache.get(text);
-            // キャッシュが有効期限内かチェック
             if (Date.now() - cached.timestamp < CACHE_EXPIRY_MS) {
-                // console.log(`[Cache] Hit for: ${text}`); // デバッグ用
-                // 有効ならキャッシュから翻訳結果を返して処理を終了
                 sendResponse({ translation: cached.translation });
-                return true; // 非同期処理であることを示す
+                return true;
             } else {
-                // 期限切れならキャッシュから削除
                 translationCache.delete(text);
             }
         }
-        // --- ここまでが翻訳キャッシュ機能の追加箇所 ---
-
-        chrome.storage.sync.get(['translator', 'geminiApiKey', 'geminiApiKey2', 'deeplApiKey', 'enableGoogleTranslateFallback'], async (settings) => {
-            const { translator, geminiApiKey, geminiApiKey2, deeplApiKey, enableGoogleTranslateFallback } = settings;
+        
+        // ★★★ ここからが修正箇所 ★★★
+        // chrome.storageから設定（辞書も含む）を取得する
+        chrome.storage.sync.get(['translator', 'geminiApiKey', 'geminiApiKey2', 'deeplApiKey', 'enableGoogleTranslateFallback', 'dictionary'], async (settings) => {
+            const { translator, geminiApiKey, geminiApiKey2, deeplApiKey, enableGoogleTranslateFallback, dictionary } = settings;
             
+            // 辞書を使ってテキストを前処理
+            const processedText = preprocessWithDictionary(text, dictionary);
+
             // 1. Google翻訳の場合
             if (translator === 'google') {
-                const result = await translateWithGoogle(text);
+                const result = await translateWithGoogle(processedText);
                 sendResponse(result);
                 return;
             }
+            // ★★★ ここまでが修正箇所 ★★★
             
             let apiKey, apiUrl, fetchOptions;
 
@@ -107,7 +126,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     return sendResponse({ error: "Gemini APIキー未設定" });
                 }
 
-                // レート制限のチェック
                 if (enableGoogleTranslateFallback) {
                     const now = Date.now();
                     geminiRequestTimestamps = geminiRequestTimestamps.filter(ts => now - ts < 60000);
@@ -115,22 +133,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     const limit = validGeminiKeys.length > 1 ? 30 : 15;
 
                     if (geminiRequestTimestamps.length >= limit) {
-                        const result = await translateWithGoogle(text);
+                        const result = await translateWithGoogle(processedText); // ★修正: processedText を使用
                         sendResponse(result);
-                        return; // フォールバックしたので以降の処理はしない
+                        return;
                     }
                 }
                 
-                // 使用するAPIキーを交互に選択
                 const currentKeyIndex = lastUsedGeminiKeyIndex % validGeminiKeys.length;
                 apiKey = validGeminiKeys[currentKeyIndex];
-                lastUsedGeminiKeyIndex++; // 次に使うキーのインデックスを更新
+                lastUsedGeminiKeyIndex++;
                 
-                geminiRequestTimestamps.push(Date.now()); // リクエストタイムスタンプを記録
+                geminiRequestTimestamps.push(Date.now());
 
                 apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
                 
-                const prompt = `あなたは、海外のYouTubeライブ配信やネット文化に精通したプロの翻訳者です。以下のチャットコメントを、日本の視聴者が読んで自然に感じる口語的な日本語に翻訳してください。ネットスラング、略語、絵文字のニュアンスも汲み取って、元の感情や雰囲気が伝わるように訳してください。返答は、いかなる追加の説明や前置き（例：「翻訳結果：」）も付けず、翻訳された日本語テキストそのものだけを返してください。コメント：「${text}」`;
+                 // ★修正: processedText を使用
+                const prompt = `あなたは、海外のYouTubeライブ配信やネット文化に精通したプロの翻訳者です。以下のチャットコメントを、日本の視聴者が読んで自然に感じる口語的な日本語に翻訳してください。ネットスラング、略語、絵文字のニュアンスも汲み取って、元の感情や雰囲気が伝わるように訳してください。返答は、いかなる追加の説明や前置き（例：「翻訳結果：」）も付けず、翻訳された日本語テキストそのものだけを返してください。コメント：「${processedText}」`;
                 
                 fetchOptions = {
                     method: 'POST',
@@ -146,11 +164,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 fetchOptions = {
                     method: 'POST',
                     headers: { 'Authorization': `DeepL-Auth-Key ${apiKey}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: [text], target_lang: 'JA' })
+                    body: JSON.stringify({ text: [processedText], target_lang: 'JA' }) // ★修正: processedText を使用
                 };
             }
 
-            // 4. APIリクエスト実行
             try {
                 const response = await fetch(apiUrl, fetchOptions);
                 if (!response.ok) {
@@ -163,31 +180,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     : data.translations?.[0]?.text)?.trim();
 
                 if (translation) {
-                    // ★ 修正: 翻訳成功時にキャッシュへ保存
-                    translationCache.set(text, { translation, timestamp: Date.now() });
+                    translationCache.set(text, { translation, timestamp: Date.now() }); // キャッシュのキーは元のテキスト
                     sendResponse({ translation });
                 } else {
                     throw new Error("APIからの翻訳結果が不正です。");
                 }
             } catch (error) {
-                // 5. APIエラー時のフォールバック
                 if (enableGoogleTranslateFallback) {
-                    const result = await translateWithGoogle(text);
+                    const result = await translateWithGoogle(processedText); // ★修正: processedText を使用
                     sendResponse(result);
                 } else {
                     sendResponse({ error: error.message || "API通信エラー" });
                 }
             }
         });
-        return true; // 非同期レスポンスを示すためにtrueを返す
+        return true; 
     }
 });
 
-/**
- * 拡張機能のアイコンがクリックされたときに実行されるリスナー
- */
 chrome.action.onClicked.addListener((tab) => {
-  if (tab.url && tab.url.includes("youtube.com/live_chat")) { // マッチパターンをより安全なものに修正
+  if (tab.url && tab.url.includes("youtube.com/live_chat")) { 
     chrome.tabs.sendMessage(tab.id, {
       action: "toggleSettingsPanel"
     });

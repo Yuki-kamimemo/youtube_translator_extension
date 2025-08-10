@@ -13,9 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const elements = {
         translator: document.getElementById('translator'),
         geminiApiKey: document.getElementById('geminiApiKey'),
-        // ★★★ ここからが修正箇所 ★★★
         geminiApiKey2: document.getElementById('geminiApiKey2'), 
-        // ★★★ ここまでが修正箇所 ★★★
         deeplApiKey: document.getElementById('deeplApiKey'),
         geminiKeyGroup: document.getElementById('gemini-key-group'),
         deeplKeyGroup: document.getElementById('deepl-key-group'),
@@ -37,6 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
         moderatorColor: document.getElementById('moderatorColor'),
         superchatColor: document.getElementById('superchatColor'),
         membershipColorFlow: document.getElementById('membershipColorFlow'),
+        // ★★★ ここからが追加箇所 ★★★
+        dictionary: document.getElementById('dictionary'),
+        // ★★★ ここまでが追加箇所 ★★★
         ngUsers: document.getElementById('ngUsers'),
         ngWords: document.getElementById('ngWords'),
         profileName: document.getElementById('profileName'),
@@ -47,9 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const defaults = {
-        // ★★★ ここからが修正箇所 ★★★
         translator: 'google', geminiApiKey: '', geminiApiKey2: '', deeplApiKey: '',
-        // ★★★ ここまでが修正箇所 ★★★
         enableGoogleTranslateFallback: true, enableInlineTranslation: true, enableFlowComments: true,
         flowContent: 'translation', flowTime: 8, fontSize: 24, opacity: 0.9, position: 'top_priority',
         flowFontFamily: "'ヒラギノ角ゴ Pro W3', 'Hiragino Kaku Gothic Pro', 'メイリオ', Meiryo, sans-serif",
@@ -57,6 +56,9 @@ document.addEventListener('DOMContentLoaded', () => {
         normalColor: '#FFFFFF', memberColor: '#28a745', moderatorColor: '#007bff',
         superchatColor: '#FFFFFF',
         membershipColorFlow: '#00e676',
+        // ★★★ ここからが追加箇所 ★★★
+        dictionary: '', 
+        // ★★★ ここまでが追加箇所 ★★★
         ngUsers: '', ngWords: '',
         profiles: {},
     };
@@ -181,8 +183,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     elements.opacity.addEventListener('input', (e) => { elements.opacityValue.textContent = e.target.value; });
     
-    // ★★★ ここからが修正箇所 ★★★
-    // storageの変更を監視し、UIに反映させるリスナー
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'sync') return;
 
@@ -200,7 +200,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
-    // ★★★ ここまでが修正箇所 ★★★
 
     chrome.storage.sync.get(defaults, (settings) => {
         loadSettings(settings);
