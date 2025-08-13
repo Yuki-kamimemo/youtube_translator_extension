@@ -271,7 +271,7 @@ async function initializeIframe() {
         const items = await waitForElement('#items.yt-live-chat-item-list-renderer', chatApp);
         startChatObserver(items);
         isInitialized = true; // ★追加: 初期化完了をマーク
-        clearTimeout(initializationRetryTimer); // ★追加: 再試行タイマーをクリア
+        clearInterval(initializationRetryTimer); // ★変更: 再試行タイマーをクリア
         console.log('[YLC Enhancer] Iframe initialized successfully.');
     } catch (error) {
         console.error('[YLC Enhancer] Iframe initialization failed:', error);
@@ -349,55 +349,55 @@ async function main() {
         }
     });
 
+
     const attemptInitialization = () => {
-        isInitialized = false; // ★追加: 初期化試行前にリセット
-        if (IS_IN_IFRAME && location.pathname.startsWith('/live_chat')) {
-            initializeIframe();
-        } else if (!IS_IN_IFRAME) {
-            initializeTopLevel();
+        // isInitializedフラグは各初期化関数の中で成功時にtrueに設定されます。
+        // まだ初期化が完了していなければ、初期化を試みます。
+        if (!isInitialized) {
+            if (IS_IN_IFRAME && location.pathname.startsWith('/live_chat')) {
+                initializeIframe();
+            } else if (!IS_IN_IFRAME) {
+                initializeTopLevel();
+            }
+        }
+
+        // もし初期化が成功していたら、繰り返し処理を停止します。
+        if (isInitialized && initializationRetryTimer) {
+            console.log('[YLC Enhancer] Initialization successful, stopping retry timer.');
+            clearInterval(initializationRetryTimer);
+            initializationRetryTimer = null; // タイマーIDをクリア
         }
     };
-    
+
     if (!IS_IN_IFRAME) {
-        // トップレベルでのメッセージリスナーとナビゲーションイベントリスナーの設定
+        // トップレベルでのメッセージリスナー
         if (!window.ylcEnhancerMessageListener) {
             window.ylcEnhancerMessageListener = true;
             chrome.runtime.onMessage.addListener(req => {
-                if (req.type === 'FLOW_COMMENT_DATA') { flowComment(req.data); } 
+                if (req.type === 'FLOW_COMMENT_DATA') { flowComment(req.data); }
                 else if (req.action === 'toggleSettingsPanel') { toggleSettingsPanel(); }
             });
         }
-        
-        // ★変更: ナビゲーションイベントリスナーは一度だけ登録
+
+        // ナビゲーションイベント（ページ遷移）リスナー
         if (!window.ylcNavigateListener) {
-             window.ylcNavigateListener = true;
-             document.body.addEventListener('yt-navigate-finish', () => {
-                 console.log('[YLC Enhancer] yt-navigate-finish detected. Re-initializing...');
-                 // isInitializedをリセットして再初期化を許可
-                 isInitialized = false;
-                 // 以前のタイマーをクリア
-                 clearTimeout(initializationRetryTimer);
-                 // 短い遅延の後、初期化を試みる
-                 initializationRetryTimer = setTimeout(attemptInitialization, 500);
-             });
+            window.ylcNavigateListener = true;
+            document.body.addEventListener('yt-navigate-finish', () => {
+                console.log('[YLC Enhancer] Page navigation detected. Re-initializing...');
+                isInitialized = false;
+                // 既存のタイマーがあればクリア
+                if (initializationRetryTimer) {
+                    clearInterval(initializationRetryTimer);
+                }
+                // ページ遷移後、再度初期化の繰り返し処理を開始
+                initializationRetryTimer = setInterval(attemptInitialization, 2000);
+            });
         }
     }
-    
-    // ★変更: DOMの読み込み状態に応じて初期化を試みる
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', attemptInitialization);
-    } else {
-        attemptInitialization();
-    }
-    
-    // ★追加: 最終手段としての再試行タイマー
-    // 3秒後に初期化が完了していなければ、再度試みる
-    initializationRetryTimer = setTimeout(() => {
-        if (!isInitialized) {
-            console.log('[YLC Enhancer] Initial attempt failed or timed out. Retrying...');
-            attemptInitialization();
-        }
-    }, 3000);
+
+    // ページの読み込み状態に関わらず、2秒ごとに初期化を試みるタイマーを開始します。
+    // これにより、YouTubeのような動的なページでも安定して初期化が行われます。
+    initializationRetryTimer = setInterval(attemptInitialization, 2000);
 }
 
 main();
