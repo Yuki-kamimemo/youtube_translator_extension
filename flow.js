@@ -1,11 +1,10 @@
 /**
- * flow.js (Optimized & Fixed)
- * Canvasを利用した軽量描画版（透過度修正済み）
+ * flow.js (Final Fix)
+ * 透過度・画像対応・特殊メッセージ対応版
  */
 
 const lanes = new Map();
 const LANE_COUNT = 15;
-// 幅計算用のCanvasをキャッシュ
 let measureContext = null;
 
 function getMeasureContext() {
@@ -17,20 +16,28 @@ function getMeasureContext() {
 }
 
 /**
- * テキストの描画幅をCanvasで高速に計算する
- * DOMに追加しないためLayout Thrashingが発生しない
+ * 幅計算（テキスト幅 + 画像幅）
+ * 画像はHTML内のimgタグ数をカウントして概算
  */
-function measureTextWidth(text, fontSize, fontFamily) {
+function measureContentWidth(text, html, fontSize, fontFamily) {
     const ctx = getMeasureContext();
-    ctx.font = `bold ${fontSize}px ${fontFamily}`; // CSSと合わせる
-    return ctx.measureText(text).width;
+    ctx.font = `bold ${fontSize}px ${fontFamily}`;
+    
+    // テキスト部分の幅
+    const textWidth = ctx.measureText(text || '').width;
+    
+    // 画像部分の幅（概算）
+    // imgタグの数を数える
+    const imgCount = (html.match(/<img/gi) || []).length;
+    // 絵文字やアイコンはフォントサイズと同程度と仮定して加算
+    const imagesWidth = imgCount * (fontSize * 1.2); 
+
+    return textWidth + imagesWidth;
 }
 
 function findAvailableLane(commentWidth) {
     if (!flowContainer) return null;
     const now = Date.now();
-    
-    // flowContainerのサイズを取得
     const containerWidth = flowContainer.offsetWidth;
     const containerHeight = flowContainer.offsetHeight;
     
@@ -47,7 +54,6 @@ function findAvailableLane(commentWidth) {
     if (settings.position === 'bottom_priority') {
         laneCheckOrder.reverse();
     } else if (settings.position === 'random') {
-        // フィッシャー–イェーツのシャッフル
         for (let i = laneCheckOrder.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [laneCheckOrder[i], laneCheckOrder[j]] = [laneCheckOrder[j], laneCheckOrder[i]];
@@ -85,16 +91,19 @@ function flowComment(data) {
             break;
     }
 
-    if (!pureText || !pureText.trim()) return;
+    // ★変更: テキストがなくても、表示するHTMLがあれば処理を続行する
+    if ((!pureText || !pureText.trim()) && !textToFlow) return;
 
-    // Canvasで幅を計算
+    // Canvasで幅を計算 (テキスト + 画像)
     const currentFont = settings.customFontFamily || settings.flowFontFamily;
     const padding = data.specialType ? 40 : 20; 
-    const commentWidth = measureTextWidth(pureText, settings.fontSize, currentFont) + padding;
+    
+    // ★変更: measureContentWidthを使用
+    const commentWidth = measureContentWidth(pureText, textToFlow, settings.fontSize, currentFont) + padding;
 
     // レーンを探す
     const topPosition = findAvailableLane(commentWidth);
-    if (topPosition === null) return; // 空きがなければ描画しない
+    if (topPosition === null) return;
 
     // DOM生成
     const el = document.createElement('div');
@@ -102,12 +111,10 @@ function flowComment(data) {
     el.style.fontFamily = currentFont;
     el.style.fontSize = `${settings.fontSize}px`;
     el.style.top = `${topPosition}px`;
-    el.style.left = '100%'; // CSSで制御するため初期位置は右端
+    el.style.left = '100%'; 
     
-    // ★★★ 修正箇所: ここに透過度設定を追加 ★★★
     el.style.opacity = settings.opacity; 
     
-    // 縁取り設定
     const width = Number(settings.strokeWidth) || 0;
     const color = settings.strokeColor || '#000000';
     if (width > 0) {
@@ -121,6 +128,7 @@ function flowComment(data) {
         el.classList.add('flow-superchat');
         el.style.backgroundColor = data.bgColor;
         el.style.color = settings.superchatColor;
+        // スーパーステッカーなどの巨大画像が含まれる場合のレイアウト調整
         el.innerHTML = `<span class="superchat-author">${data.authorName}</span><span class="superchat-amount">${data.purchaseAmount}</span><div class="superchat-message">${textToFlow}</div>`;
     } else if (data.specialType === 'membership') {
         el.classList.add('flow-membership');

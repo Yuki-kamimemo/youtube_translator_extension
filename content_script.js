@@ -1,6 +1,6 @@
 /**
- * content_script.js (Optimized)
- * パフォーマンス最適化版：バッチ処理と軽量化
+ * content_script.js (Optimized & Expanded)
+ * パフォーマンス最適化 + 特殊メッセージ対応版
  */
 
 const IS_IN_IFRAME = (window.self !== window.top);
@@ -12,10 +12,9 @@ let flowContainer = null;
 let isInitialized = false;
 let initializationRetryTimer = null;
 
-// ★追加: 処理待ちキューとタイマー
 let commentQueue = [];
 let processingTimer = null;
-const BATCH_INTERVAL = 200; // まとめて処理する間隔(ms)
+const BATCH_INTERVAL = 200;
 
 const DEFAULTS = {
     translator: 'google', deeplApiKey: '', enableInlineTranslation: true,
@@ -36,7 +35,6 @@ function updateNgLists() {
     ngWordList = settings.ngWords ? settings.ngWords.split('\n').map(w => w.trim()).filter(Boolean) : [];
 }
 
-// 汎用待機関数
 function waitForElement(selector, parent = document, timeout = 10000) {
     return new Promise((resolve, reject) => {
         const existing = parent.querySelector(selector);
@@ -52,20 +50,17 @@ function waitForElement(selector, parent = document, timeout = 10000) {
         });
         const timer = setTimeout(() => {
             observer.disconnect();
-            // console.warn(`Timeout waiting for ${selector}`); // ログ抑制
             reject(new Error(`Timeout: ${selector}`));
         }, timeout);
         observer.observe(parent.documentElement || parent, { childList: true, subtree: true });
     });
 }
 
-// コメント解析（DOMアクセスを最小限に）
+// コメント解析（特殊メッセージ対応強化）
 function parseComment(node) {
-    // 必要な要素を一度だけ取得
     const authorEl = node.querySelector('#author-name');
     const messageEl = node.querySelector('#message');
     
-    // authorTypeの取得
     const authorTypeAttr = node.getAttribute('author-type');
     let userType = 'normal';
     if (authorTypeAttr === 'moderator') userType = 'moderator';
@@ -77,13 +72,24 @@ function parseComment(node) {
         specialType: null,
     };
 
-    const tagName = node.tagName;
+    const tagName = node.tagName.toUpperCase();
+
+    // 1. 通常コメント
     if (tagName === 'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER') {
         if (messageEl) {
             baseComment.html = messageEl.innerHTML;
             baseComment.text = messageEl.textContent || '';
+            // 画像(絵文字)のみの場合、alt属性などからテキストを補完して空判定を防ぐ
+            if (!baseComment.text.trim()) {
+                const imgs = messageEl.querySelectorAll('img');
+                if (imgs.length > 0) {
+                    baseComment.text = Array.from(imgs).map(img => img.alt || 'emoji').join(' ');
+                }
+            }
         }
-    } else if (tagName === 'YT-LIVE-CHAT-PAID-MESSAGE-RENDERER') {
+    } 
+    // 2. スーパーチャット (赤スパなど)
+    else if (tagName === 'YT-LIVE-CHAT-PAID-MESSAGE-RENDERER') {
         const purchaseAmountEl = node.querySelector('#purchase-amount');
         if (messageEl) {
             baseComment.html = messageEl.innerHTML;
@@ -91,9 +97,10 @@ function parseComment(node) {
         }
         baseComment.specialType = 'superchat';
         baseComment.purchaseAmount = purchaseAmountEl ? purchaseAmountEl.textContent.trim() : '';
-        // スタイル計算は重いので、データ属性があればそれを使うか、最小限にする
         baseComment.bgColor = node.style.getPropertyValue('--yt-live-chat-paid-message-primary-color') || '#ff0000';
-    } else if (tagName === 'YT-LIVE-CHAT-MEMBERSHIP-ITEM-RENDERER') {
+    } 
+    // 3. メンバーシップ加入/更新
+    else if (tagName === 'YT-LIVE-CHAT-MEMBERSHIP-ITEM-RENDERER') {
         const headerSubtextEl = node.querySelector('#header-subtext');
         let membershipHtml = headerSubtextEl ? headerSubtextEl.innerHTML : '';
         let membershipText = headerSubtextEl ? headerSubtextEl.textContent : '';
@@ -107,8 +114,40 @@ function parseComment(node) {
         }
         baseComment.specialType = 'membership';
     }
+    // 4. スーパーステッカー (投げ銭スタンプ)
+    else if (tagName === 'YT-LIVE-CHAT-PAID-STICKER-RENDERER') {
+        const purchaseAmountEl = node.querySelector('#purchase-amount-chip');
+        const stickerImg = node.querySelector('#sticker > img');
+        
+        baseComment.specialType = 'superchat'; // フロー上はスパチャと同じ扱いでOK
+        baseComment.purchaseAmount = purchaseAmountEl ? purchaseAmountEl.textContent.trim() : '';
+        baseComment.bgColor = node.style.getPropertyValue('--yt-live-chat-paid-sticker-background-color') || '#ff0000';
+        
+        if (stickerImg) {
+            // 画像を大きく表示するためのHTMLを生成
+            baseComment.html = `<img src="${stickerImg.src}" style="height: 80px; width: auto;">`;
+            baseComment.text = '[Super Sticker]';
+        }
+    }
+    // 5. メンバーシップギフト購入
+    else if (tagName === 'YT-LIVE-CHAT-MEMBERSHIP-GIFT-PURCHASE-RENDERER') {
+        const headerEl = node.querySelector('#header');
+        const giftImg = node.querySelector('#gift-image > img');
+        
+        baseComment.specialType = 'membership';
+        baseComment.html = (headerEl ? headerEl.innerHTML : '') + (giftImg ? `<br><img src="${giftImg.src}" style="height: 1.5em;">` : '');
+        baseComment.text = headerEl ? headerEl.textContent : '[Gift Purchase]';
+    }
+    // 6. ギフト受け取り (ログが大量に出るので不要なら外しても良い)
+    else if (tagName === 'YT-LIVE-CHAT-GIFT-MEMBERSHIP-RECEIVED-RENDERER') {
+        const msgEl = node.querySelector('#message');
+        baseComment.specialType = 'membership';
+        baseComment.html = msgEl ? msgEl.innerHTML : '';
+        baseComment.text = msgEl ? msgEl.textContent : '[Gift Received]';
+    }
 
-    if (!baseComment.html && !baseComment.specialType) return null;
+    // HTMLもテキストもなければ無効
+    if (!baseComment.html && !baseComment.text && !baseComment.specialType) return null;
     return baseComment;
 }
 
@@ -122,16 +161,12 @@ function isCommentFiltered(comment) {
     return false;
 }
 
-// ★追加: バッチ処理ロジック
 function processQueue() {
     if (commentQueue.length === 0) return;
-
-    // キューのコピーを作成してリセット
     const batch = [...commentQueue];
     commentQueue = [];
 
     batch.forEach(({ node, comment }) => {
-        // NGチェック
         if (isCommentFiltered(comment)) {
             node.style.display = 'none';
             return;
@@ -144,7 +179,10 @@ function processQueue() {
             }
         };
 
-        if (settings.enableInlineTranslation && comment.text) {
+        // テキストが存在し、かつ画像のみのメッセージ（[Super Sticker]など）でない場合に翻訳を実行
+        const isTranslatable = comment.text && !comment.text.startsWith('[') && settings.enableInlineTranslation;
+
+        if (isTranslatable) {
             requestTranslation(comment.text, (result) => {
                 if (result.translation) {
                     displayInlineTranslation(node, result.translation);
@@ -166,10 +204,8 @@ function queueCommentProcessing(node) {
     const comment = parseComment(node);
     if (!comment) return;
 
-    // キューに追加
     commentQueue.push({ node, comment });
 
-    // タイマーがなければセット
     if (!processingTimer) {
         processingTimer = setTimeout(() => {
             processQueue();
@@ -178,7 +214,7 @@ function queueCommentProcessing(node) {
     }
 }
 
-// --- UI系 (変更なしだが軽量化のため短縮記載) ---
+// --- UI系 ---
 function createToggleButton(id, key, prefix, parent) {
     const btn = document.createElement('button');
     btn.id = id;
@@ -190,7 +226,7 @@ function createToggleButton(id, key, prefix, parent) {
     update();
     btn.onclick = () => { settings[key] = !settings[key]; chrome.storage.sync.set({ [key]: settings[key] }); update(); };
     parent.appendChild(btn);
-    return btn; // 更新用に返す
+    return btn;
 }
 
 function toggleSettingsPanel() {
@@ -208,7 +244,6 @@ function createSettingsPanel() {
     `;
     document.body.appendChild(panel);
     
-    // 簡易的なドラッグ処理
     const header = panel.querySelector('#ylc-settings-header');
     const close = panel.querySelector('#ylc-settings-close-btn');
     close.onclick = () => panel.style.display = 'none';
@@ -221,20 +256,23 @@ function createSettingsPanel() {
     document.addEventListener('mouseup', () => isDragging = false);
 }
 
-// --- Observer ---
+// --- Observer (ターゲットタグを追加) ---
 function startChatObserver(chatItemsEl) {
     if (chatObserver) chatObserver.disconnect();
     
     const targetTags = new Set([
         'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER', 
         'YT-LIVE-CHAT-PAID-MESSAGE-RENDERER', 
-        'YT-LIVE-CHAT-MEMBERSHIP-ITEM-RENDERER'
+        'YT-LIVE-CHAT-MEMBERSHIP-ITEM-RENDERER',
+        'YT-LIVE-CHAT-PAID-STICKER-RENDERER',           // ★追加: スーパーステッカー
+        'YT-LIVE-CHAT-MEMBERSHIP-GIFT-PURCHASE-RENDERER', // ★追加: ギフト購入
+        'YT-LIVE-CHAT-GIFT-MEMBERSHIP-RECEIVED-RENDERER'  // ★追加: ギフト受領
     ]);
 
     chatObserver = new MutationObserver(mutations => {
         for (const m of mutations) {
             for (const node of m.addedNodes) {
-                if (node.nodeType === 1 && targetTags.has(node.tagName)) {
+                if (node.nodeType === 1 && targetTags.has(node.tagName.toUpperCase())) {
                     queueCommentProcessing(node);
                 }
             }
@@ -305,7 +343,6 @@ async function main() {
             settings[k] = changes[k].newValue;
             if (k === 'ngUsers' || k === 'ngWords') updateNgLists();
             
-            // UI更新
             if (IS_IN_IFRAME && (k === 'enableInlineTranslation' || k === 'enableFlowComments')) {
                 const btnId = k === 'enableInlineTranslation' ? 'toggle-translation-btn' : 'toggle-flow-btn';
                 const btn = document.getElementById(btnId);
