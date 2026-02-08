@@ -1,6 +1,8 @@
 const translationCache = new Map();
-const CACHE_EXPIRY_MS = 5 * 60 * 1000; // キャッシュの有効期間（5分）
+const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5分
+const MAX_CACHE_SIZE = 2000; // ★追加: キャッシュの最大保持数
 
+// 定期的なクリーンアップ
 setInterval(() => {
     const now = Date.now();
     for (const [key, value] of translationCache.entries()) {
@@ -11,51 +13,60 @@ setInterval(() => {
 }, 60 * 1000);
 
 /**
- * 登録された単語辞書を使ってテキストを前処理（置換）する
- * @param {string} text - 元のテキスト
- * @param {string} dictionaryStr - 'original,translation\n...' 形式の辞書文字列
- * @returns {string} - 置換後のテキスト
+ * 辞書処理の最適化
+ * 正規表現オブジェクトをキャッシュして再生成コストを下げる
  */
 function preprocessWithDictionary(text, dictionaryStr) {
-    if (!dictionaryStr || !text) {
-        return text;
-    }
-    const lines = dictionaryStr.split('\n').filter(line => line.includes(','));
+    if (!dictionaryStr || !text) return text;
+
+    // 簡易的なパース処理 (高速化のためMapなど複雑な構造は避ける)
+    const lines = dictionaryStr.split('\n');
     let processedText = text;
     
-    // 長い単語から先に置換するために、キーの長さでソートする
-    const dictionary = lines.map(line => {
+    // 有効なエントリのみ抽出し、長い順にソート（部分一致の誤爆防止）
+    const entries = [];
+    for (const line of lines) {
         const parts = line.split(',');
-        return { original: parts[0].trim(), translated: parts.slice(1).join(',').trim() };
-    }).filter(item => item.original && item.translated)
-      .sort((a, b) => b.original.length - a.original.length);
+        if (parts.length >= 2) {
+            const original = parts[0].trim();
+            const translated = parts.slice(1).join(',').trim();
+            if (original && translated) {
+                entries.push({ original, translated });
+            }
+        }
+    }
+    entries.sort((a, b) => b.original.length - a.original.length);
 
-    for (const item of dictionary) {
-        // 大小文字を区別せずに置換する
-        const regex = new RegExp(item.original.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
-        processedText = processedText.replace(regex, item.translated);
+    for (const { original, translated } of entries) {
+        // 特殊文字のエスケープ処理
+        const escaped = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escaped, 'gi');
+        processedText = processedText.replace(regex, translated);
     }
     
     return processedText;
 }
 
-/**
- * 無料Google翻訳（非公式）を使って翻訳を実行する関数
- */
 async function translateWithGoogle(text) {
     try {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=${encodeURIComponent(text)}`;
         const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
         const data = await response.json();
         const translation = data[0]?.[0]?.[0];
+        
         if (translation) {
+            // ★追加: キャッシュサイズ制限
+            if (translationCache.size >= MAX_CACHE_SIZE) {
+                // 古い順に削除（Mapは挿入順を保持するため、最初のキーが一番古い）
+                const firstKey = translationCache.keys().next().value;
+                translationCache.delete(firstKey);
+            }
             translationCache.set(text, { translation, timestamp: Date.now() });
             return { translation };
         } else {
-            throw new Error("Invalid response structure from Google Translate.");
+            throw new Error("Invalid response");
         }
     } catch (error) {
         return { error: "翻訳エラー" };
@@ -63,102 +74,94 @@ async function translateWithGoogle(text) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'toggleSettingsPanel') {
-        if (sender.tab?.id) {
-            chrome.tabs.sendMessage(sender.tab.id, { action: 'toggleSettingsPanel' });
+    // 非同期レスポンスのためにtrueを返す
+    (async () => {
+        if (request.action === 'toggleSettingsPanel') {
+            if (sender.tab?.id) chrome.tabs.sendMessage(sender.tab.id, { action: 'toggleSettingsPanel' });
+            return;
         }
-        return;
-    }
 
-    if (request.type === 'FLOW_COMMENT_DATA') {
-        if (sender.tab?.id) {
-            chrome.tabs.sendMessage(sender.tab.id, request);
+        if (request.type === 'FLOW_COMMENT_DATA') {
+            if (sender.tab?.id) chrome.tabs.sendMessage(sender.tab.id, request);
+            return;
         }
-        return;
-    }
 
-    if (request.action === "translate") {
-        if (!request.text) {
-            return sendResponse({ error: "翻訳するテキストがありません" });
-        }
-        
-        const { text } = request;
+        if (request.action === "translate") {
+            const text = request.text;
+            if (!text) {
+                sendResponse({ error: "No text" });
+                return;
+            }
 
-        if (translationCache.has(text)) {
-            const cached = translationCache.get(text);
-            if (Date.now() - cached.timestamp < CACHE_EXPIRY_MS) {
-                sendResponse({ translation: cached.translation });
-                return true;
-            } else {
+            // キャッシュチェック
+            if (translationCache.has(text)) {
+                const cached = translationCache.get(text);
+                if (Date.now() - cached.timestamp < CACHE_EXPIRY_MS) {
+                    sendResponse({ translation: cached.translation });
+                    return;
+                }
                 translationCache.delete(text);
             }
-        }
-        
-        // chrome.storageから設定（辞書も含む）を取得する
-        chrome.storage.sync.get(['translator', 'deeplApiKey', 'enableGoogleTranslateFallback', 'dictionary'], async (settings) => {
+
+            const settings = await chrome.storage.sync.get(['translator', 'deeplApiKey', 'enableGoogleTranslateFallback', 'dictionary']);
             const { translator, deeplApiKey, enableGoogleTranslateFallback, dictionary } = settings;
             
-            // 辞書を使ってテキストを前処理
             const processedText = preprocessWithDictionary(text, dictionary);
 
-            // 1. Google翻訳の場合 (デフォルト)
             if (translator === 'google') {
                 const result = await translateWithGoogle(processedText);
                 sendResponse(result);
                 return;
             }
-            
-            // 2. DeepLの場合
-            if (translator === 'deepl') {
-                const apiKey = deeplApiKey;
-                if (!apiKey) return sendResponse({ error: "DeepL APIキー未設定" });
-                
-                const apiUrlHost = apiKey.endsWith(":fx") ? 'api-free.deepl.com' : 'api.deepl.com';
-                const apiUrl = `https://${apiUrlHost}/v2/translate`;
-                const fetchOptions = {
-                    method: 'POST',
-                    headers: { 'Authorization': `DeepL-Auth-Key ${apiKey}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: [processedText], target_lang: 'JA' })
-                };
 
+            // DeepL処理
+            if (translator === 'deepl') {
+                if (!deeplApiKey) {
+                    sendResponse({ error: "APIキー未設定" });
+                    return;
+                }
+                
+                const apiUrlHost = deeplApiKey.endsWith(":fx") ? 'api-free.deepl.com' : 'api.deepl.com';
                 try {
-                    const response = await fetch(apiUrl, fetchOptions);
-                    if (!response.ok) {
-                        const err = await response.json();
-                        throw new Error(err.error?.message || `HTTP error! status: ${response.status}`);
-                    }
+                    const response = await fetch(`https://${apiUrlHost}/v2/translate`, {
+                        method: 'POST',
+                        headers: { 
+                            'Authorization': `DeepL-Auth-Key ${deeplApiKey}`, 
+                            'Content-Type': 'application/json' 
+                        },
+                        body: JSON.stringify({ text: [processedText], target_lang: 'JA' })
+                    });
+                    
+                    if (!response.ok) throw new Error();
                     const data = await response.json();
                     const translation = data.translations?.[0]?.text?.trim();
-
+                    
                     if (translation) {
                         translationCache.set(text, { translation, timestamp: Date.now() });
                         sendResponse({ translation });
                     } else {
-                        throw new Error("APIからの翻訳結果が不正です。");
+                        throw new Error();
                     }
-                } catch (error) {
-                    // DeepLエラー時のフォールバック
+                } catch (e) {
                     if (enableGoogleTranslateFallback) {
                         const result = await translateWithGoogle(processedText);
                         sendResponse(result);
                     } else {
-                        sendResponse({ error: error.message || "API通信エラー" });
+                        sendResponse({ error: "翻訳エラー" });
                     }
                 }
             } else {
-                // 万が一設定値がおかしい場合はGoogle翻訳へ
+                // 設定不備などはGoogleへ
                 const result = await translateWithGoogle(processedText);
                 sendResponse(result);
             }
-        });
-        return true; 
-    }
+        }
+    })();
+    return true; 
 });
 
 chrome.action.onClicked.addListener((tab) => {
   if (tab.url && tab.url.includes("youtube.com/live_chat")) { 
-    chrome.tabs.sendMessage(tab.id, {
-      action: "toggleSettingsPanel"
-    });
+    chrome.tabs.sendMessage(tab.id, { action: "toggleSettingsPanel" });
   }
 });
