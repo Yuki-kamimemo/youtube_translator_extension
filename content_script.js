@@ -11,12 +11,12 @@ let chatObserver = null;
 let ngUserList = [];
 let ngWordList = [];
 let flowContainer = null; // flow.jsが使用するグローバル変数
-let isInitialized = false; // ★追加: 初期化状態を管理するフラグ
-let initializationRetryTimer = null; // ★追加: 初期化再試行のためのタイマー
+let isInitialized = false; // 初期化状態を管理するフラグ
+let initializationRetryTimer = null; // 初期化再試行のためのタイマー
 
 // --- デフォルト設定 ---
 const DEFAULTS = {
-    translator: 'gemini', geminiApiKey: '', geminiApiKey2: '', deeplApiKey: '', enableInlineTranslation: true,
+    translator: 'google', deeplApiKey: '', enableInlineTranslation: true,
     enableGoogleTranslateFallback: true, enableFlowComments: true, flowContent: 'translation',
     flowTime: 8, fontSize: 24, opacity: 0.9, position: 'top_priority',
     strokeWidth: 1.5, strokeColor: '#000000',
@@ -35,7 +35,7 @@ function updateNgLists() {
     ngWordList = settings.ngWords ? settings.ngWords.split('\n').map(w => w.trim()).filter(Boolean) : [];
 }
 
-function waitForElement(selector, parent = document, timeout = 15000) { // ★変更: タイムアウトを追加
+function waitForElement(selector, parent = document, timeout = 15000) {
     return new Promise((resolve, reject) => {
         const element = parent.querySelector(selector);
         if (element) {
@@ -244,7 +244,6 @@ function startChatObserver(chatItemsEl) {
 
 // --- 初期化 ---
 async function initializeIframe() {
-    // ★変更: isInitializedフラグをチェック
     if (isInitialized) return;
     
     try {
@@ -255,7 +254,7 @@ async function initializeIframe() {
         if (!controls) {
             controls = document.createElement('div');
             controls.id = 'enhancer-controls';
-            header.after(controls); // ★変更: 先にコンテナを挿入
+            header.after(controls); 
             
             // UIの作成
             createToggleButton('toggle-translation-btn', 'enableInlineTranslation', '翻訳', controls);
@@ -270,17 +269,16 @@ async function initializeIframe() {
         
         const items = await waitForElement('#items.yt-live-chat-item-list-renderer', chatApp);
         startChatObserver(items);
-        isInitialized = true; // ★追加: 初期化完了をマーク
-        clearInterval(initializationRetryTimer); // ★変更: 再試行タイマーをクリア
+        isInitialized = true; 
+        clearInterval(initializationRetryTimer);
         console.log('[YLC Enhancer] Iframe initialized successfully.');
     } catch (error) {
         console.error('[YLC Enhancer] Iframe initialization failed:', error);
-        isInitialized = false; // ★追加: 失敗した場合は未初期化状態に戻す
+        isInitialized = false; 
     }
 }
 
 async function initializeTopLevel() {
-    // ★変更: isInitializedフラグをチェック
     if (isInitialized) return;
     if (!location.pathname.startsWith('/watch')) return;
 
@@ -292,7 +290,7 @@ async function initializeTopLevel() {
             player.appendChild(flowContainer);
         }
         createSettingsPanel();
-        isInitialized = true; // ★追加: 初期化完了をマーク
+        isInitialized = true; 
         console.log('[YLC Enhancer] Top-level initialized successfully.');
     } catch (error) {
         console.error('[YLC Enhancer] Top-level initialization failed:', error);
@@ -320,7 +318,7 @@ async function main() {
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'sync') return;
         let ngListsChanged = false;
-        let reInitRequired = false; // ★追加: UI更新が必要かどうかのフラグ
+        let reInitRequired = false; // UI更新が必要かどうかのフラグ
         for (let key in changes) {
             settings[key] = changes[key].newValue;
             if (key === 'ngUsers' || key === 'ngWords') ngListsChanged = true;
@@ -332,7 +330,7 @@ async function main() {
         }
         if (ngListsChanged) updateNgLists();
         
-        // ★変更: ボタンの状態を動的に更新
+        // ボタンの状態を動的に更新
         if (IS_IN_IFRAME && reInitRequired) {
             const transBtn = document.getElementById('toggle-translation-btn');
             if (transBtn && 'enableInlineTranslation' in changes) {

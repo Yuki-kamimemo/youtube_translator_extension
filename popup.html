@@ -86,26 +86,16 @@
             <label for="translator">翻訳サービス</label>
             <select id="translator">
                 <option value="google">Google翻訳 (APIキー不要)</option>
-                <option value="gemini">Gemini</option>
                 <option value="deepl">DeepL</option>
             </select>
         </div>
-        <div id="gemini-key-group" class="api-key-group">
-            <div class="form-group">
-                <label for="geminiApiKey">Gemini APIキー 1</label>
-                <input type="password" id="geminiApiKey" placeholder="Gemini APIキー 1">
-            </div>
-            <div class="form-group">
-                <label for="geminiApiKey2">Gemini APIキー 2 <span class="note">(オプション)</span></label>
-                <input type="password" id="geminiApiKey2" placeholder="2つ目のGemini APIキー (交互に使用されます)">
-            </div>
-        </div>
+        
         <div id="deepl-key-group" class="api-key-group">
             <label for="deeplApiKey">DeepL APIキー</label>
             <input type="password" id="deeplApiKey" placeholder="DeepL APIキー (Free or Pro)">
         </div>
         <div class="form-group">
-            <label><input type="checkbox" id="enableGoogleTranslateFallback"> API上限超過時にGoogle翻訳を利用</label>
+            <label><input type="checkbox" id="enableGoogleTranslateFallback"> DeepLエラー時にGoogle翻訳を利用</label>
         </div>
 
         <h4>機能のオン・オフ</h4>

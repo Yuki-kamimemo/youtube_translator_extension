@@ -11,10 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const elements = {
         translator: document.getElementById('translator'),
-        geminiApiKey: document.getElementById('geminiApiKey'),
-        geminiApiKey2: document.getElementById('geminiApiKey2'), 
         deeplApiKey: document.getElementById('deeplApiKey'),
-        geminiKeyGroup: document.getElementById('gemini-key-group'),
         deeplKeyGroup: document.getElementById('deepl-key-group'),
         enableGoogleTranslateFallback: document.getElementById('enableGoogleTranslateFallback'),
         enableInlineTranslation: document.getElementById('enableInlineTranslation'),
@@ -25,10 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
         opacity: document.getElementById('opacity'),
         opacityValue: document.getElementById('opacityValue'),
         position: document.getElementById('position'),
-        // ★★★ ここからが追加箇所 ★★★
         strokeWidth: document.getElementById('strokeWidth'),
         strokeColor: document.getElementById('strokeColor'),
-        // ★★★ ここまでが追加箇所 ★★★
         flowFontFamily: document.getElementById('flowFontFamily'),
         customFontFamily: document.getElementById('customFontFamily'),
         flowMarginTop: document.getElementById('flowMarginTop'),
@@ -49,12 +44,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const defaults = {
-        translator: 'google', geminiApiKey: '', geminiApiKey2: '', deeplApiKey: '',
+        translator: 'google', deeplApiKey: '',
         enableGoogleTranslateFallback: true, enableInlineTranslation: true, enableFlowComments: true,
         flowContent: 'translation', flowTime: 8, fontSize: 24, opacity: 0.9, position: 'top_priority',
-        // ★★★ ここからが追加箇所 ★★★
         strokeWidth: 1.5, strokeColor: '#000000',
-        // ★★★ ここまでが追加箇所 ★★★
         flowFontFamily: "'ヒラギノ角ゴ Pro W3', 'Hiragino Kaku Gothic Pro', 'メイリオ', Meiryo, sans-serif",
         customFontFamily: '', flowMarginTop: 10, flowMarginBottom: 10,
         normalColor: '#FFFFFF', memberColor: '#28a745', moderatorColor: '#007bff',
@@ -203,7 +196,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function toggleApiKeyInput(selected) {
-        elements.geminiKeyGroup.style.display = (selected === 'gemini') ? 'block' : 'none';
         elements.deeplKeyGroup.style.display = (selected === 'deepl') ? 'block' : 'none';
     }
 });
