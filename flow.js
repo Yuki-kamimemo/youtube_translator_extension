@@ -1,52 +1,28 @@
 /**
- * flow.js (Final Fix)
- * 透過度・画像対応・特殊メッセージ対応版
+ * flow.js
+ * フローコメント（弾幕）関連の機能
+ * ★画像（絵文字・ステッカー）の幅計算を補正する修正を追加
  */
+
+// グローバル変数（content_script.jsで定義・初期化される）
+// - settings
+// - flowContainer
 
 const lanes = new Map();
 const LANE_COUNT = 15;
-let measureContext = null;
-
-function getMeasureContext() {
-    if (!measureContext) {
-        const canvas = document.createElement('canvas');
-        measureContext = canvas.getContext('2d');
-    }
-    return measureContext;
-}
 
 /**
- * 幅計算（テキスト幅 + 画像幅）
- * 画像はHTML内のimgタグ数をカウントして概算
+ * フローコメントを表示するための空きレーンを探す
  */
-function measureContentWidth(text, html, fontSize, fontFamily) {
-    const ctx = getMeasureContext();
-    ctx.font = `bold ${fontSize}px ${fontFamily}`;
-    
-    // テキスト部分の幅
-    const textWidth = ctx.measureText(text || '').width;
-    
-    // 画像部分の幅（概算）
-    // imgタグの数を数える
-    const imgCount = (html.match(/<img/gi) || []).length;
-    // 絵文字やアイコンはフォントサイズと同程度と仮定して加算
-    const imagesWidth = imgCount * (fontSize * 1.2); 
-
-    return textWidth + imagesWidth;
-}
-
 function findAvailableLane(commentWidth) {
     if (!flowContainer) return null;
     const now = Date.now();
     const containerWidth = flowContainer.offsetWidth;
-    const containerHeight = flowContainer.offsetHeight;
-    
     const requiredTime = (commentWidth / containerWidth) * (settings.flowTime * 1000) + 500;
-    
+    const containerHeight = flowContainer.offsetHeight;
     const marginTop = Number(settings.flowMarginTop) || 0;
     const marginBottom = Number(settings.flowMarginBottom) || 0;
     const drawableHeight = containerHeight - marginTop - marginBottom;
-    
     if (drawableHeight <= 0) return null;
     const laneHeight = drawableHeight / LANE_COUNT;
     
@@ -61,8 +37,8 @@ function findAvailableLane(commentWidth) {
     }
 
     for (const i of laneCheckOrder) {
-        const laneBecomesFreeAt = lanes.get(i) || 0;
-        if (now > laneBecomesFreeAt) {
+        const laneBecomesFreeAt = lanes.get(i);
+        if (!laneBecomesFreeAt || now > laneBecomesFreeAt) {
             lanes.set(i, now + requiredTime);
             return (i * laneHeight) + marginTop;
         }
@@ -70,65 +46,49 @@ function findAvailableLane(commentWidth) {
     return null;
 }
 
+/**
+ * 画面にコメントを流す
+ */
 function flowComment(data) {
     if (!flowContainer || !settings.enableFlowComments) return;
     
     let textToFlow = '';
-    let pureText = '';
-
     switch (settings.flowContent) {
-        case 'translation': 
-            textToFlow = data.translated || data.html; 
-            pureText = data.translated || data.text;
-            break;
-        case 'original': 
-            textToFlow = data.html; 
-            pureText = data.text;
-            break;
-        case 'both': 
-            textToFlow = data.translated ? `${data.html} <span class="flow-translation">(${data.translated})</span>` : data.html; 
-            pureText = data.translated ? `${data.text} (${data.translated})` : data.text;
-            break;
+        case 'translation': textToFlow = data.translated || data.html; break;
+        case 'original': textToFlow = data.html; break;
+        case 'both': textToFlow = data.translated ? `${data.html} <span class="flow-translation">(${data.translated})</span>` : data.html; break;
     }
 
-    // ★変更: テキストがなくても、表示するHTMLがあれば処理を続行する
-    if ((!pureText || !pureText.trim()) && !textToFlow) return;
+    if (!textToFlow.trim()) return;
 
-    // Canvasで幅を計算 (テキスト + 画像)
-    const currentFont = settings.customFontFamily || settings.flowFontFamily;
-    const padding = data.specialType ? 40 : 20; 
-    
-    // ★変更: measureContentWidthを使用
-    const commentWidth = measureContentWidth(pureText, textToFlow, settings.fontSize, currentFont) + padding;
-
-    // レーンを探す
-    const topPosition = findAvailableLane(commentWidth);
-    if (topPosition === null) return;
-
-    // DOM生成
     const el = document.createElement('div');
     el.className = 'flow-comment';
-    el.style.fontFamily = currentFont;
+    el.style.fontFamily = settings.customFontFamily || settings.flowFontFamily;
     el.style.fontSize = `${settings.fontSize}px`;
-    el.style.top = `${topPosition}px`;
-    el.style.left = '100%'; 
+    el.style.opacity = '0';
+    el.style.position = 'absolute';
+    el.style.top = '-9999px';
+    el.style.fontWeight = 'bold';
+    el.style.willChange = 'transform';
     
-    el.style.opacity = settings.opacity; 
-    
+    // 縁取り設定
+    const dropShadow = '1.5px 1.5px 3px rgba(0,0,0,0.9)';
     const width = Number(settings.strokeWidth) || 0;
     const color = settings.strokeColor || '#000000';
+    
+    let textShadows = [dropShadow];
     if (width > 0) {
-        const shadow = `1.5px 1.5px 3px rgba(0,0,0,0.9), -${width}px -${width}px 0 ${color}, ${width}px -${width}px 0 ${color}, -${width}px ${width}px 0 ${color}, ${width}px ${width}px 0 ${color}`;
-        el.style.textShadow = shadow;
-    } else {
-        el.style.textShadow = '1.5px 1.5px 3px rgba(0,0,0,0.9)';
+        textShadows.push(`-${width}px -${width}px 0 ${color}`);
+        textShadows.push(`${width}px -${width}px 0 ${color}`);
+        textShadows.push(`-${width}px  ${width}px 0 ${color}`);
+        textShadows.push(`${width}px  ${width}px 0 ${color}`);
     }
+    el.style.textShadow = textShadows.join(', ');
 
     if (data.specialType === 'superchat') {
         el.classList.add('flow-superchat');
         el.style.backgroundColor = data.bgColor;
-        el.style.color = settings.superchatColor;
-        // スーパーステッカーなどの巨大画像が含まれる場合のレイアウト調整
+        el.style.color = settings.superchatColor; 
         el.innerHTML = `<span class="superchat-author">${data.authorName}</span><span class="superchat-amount">${data.purchaseAmount}</span><div class="superchat-message">${textToFlow}</div>`;
     } else if (data.specialType === 'membership') {
         el.classList.add('flow-membership');
@@ -138,18 +98,50 @@ function flowComment(data) {
         el.innerHTML = textToFlow;
         el.style.color = settings[`${data.userType}Color`] || settings.normalColor;
     }
+    
+    // DOMに追加して幅を測定
+    flowContainer.appendChild(el);
+    let commentWidth = el.offsetWidth;
+    
+    // ★★★ 画像の幅補正 ★★★
+    // <img>タグが含まれている場合、画像がロードされる前は width が 0 になることがあるため、
+    // HTML内のimgタグの数をカウントして、強制的に幅を加算する。
+    const imgMatch = textToFlow.match(/<img/gi);
+    const imgCount = imgMatch ? imgMatch.length : 0;
+    
+    // ステッカー（大きな画像）か、通常の絵文字かを判定
+    const hasSticker = textToFlow.includes('style="height: 80px') || textToFlow.includes('yt-live-chat-paid-sticker-renderer');
+    
+    // 通常の測定幅が極端に小さい（画像未ロード）かつ、画像タグがある場合
+    if (commentWidth < (imgCount * settings.fontSize)) {
+        if (hasSticker) {
+            // ステッカーの場合は大きく加算 (80px + マージン)
+            commentWidth += 100; 
+        } else {
+            // 絵文字の場合はフォントサイズ分を加算
+            commentWidth += (imgCount * (settings.fontSize * 1.2));
+        }
+    }
 
-    // アニメーション設定
+    flowContainer.removeChild(el);
+    
+    // 測定完了後、設定を適用
+    el.style.opacity = settings.opacity;
+    el.style.position = '';
+    el.style.top = '';
+
+    const topPosition = findAvailableLane(commentWidth);
+    if (topPosition === null) return;
+
     el.style.transition = `transform ${settings.flowTime}s linear`;
+    el.style.top = `${topPosition}px`;
+    el.style.left = `${flowContainer.offsetWidth}px`;
     
     flowContainer.appendChild(el);
 
     requestAnimationFrame(() => {
-        const containerWidth = flowContainer.offsetWidth; 
-        el.style.transform = `translateX(-${containerWidth + commentWidth}px)`;
+        el.style.transform = `translateX(-${flowContainer.offsetWidth + commentWidth}px)`;
     });
 
-    el.addEventListener('transitionend', () => {
-        el.remove();
-    });
+    setTimeout(() => el.remove(), settings.flowTime * 1000 + 500);
 }
