@@ -1,11 +1,11 @@
 /**
- * flow.js (Optimized)
- * Canvasを利用した軽量描画版
+ * flow.js (Optimized & Fixed)
+ * Canvasを利用した軽量描画版（透過度修正済み）
  */
 
 const lanes = new Map();
 const LANE_COUNT = 15;
-// ★追加: 幅計算用のCanvas
+// 幅計算用のCanvasをキャッシュ
 let measureContext = null;
 
 function getMeasureContext() {
@@ -29,8 +29,8 @@ function measureTextWidth(text, fontSize, fontFamily) {
 function findAvailableLane(commentWidth) {
     if (!flowContainer) return null;
     const now = Date.now();
-    // DOMアクセスは最小限に。flowContainerのサイズが変わることは稀なので
-    // 本来はここもキャッシュすべきだが、安全のため取得
+    
+    // flowContainerのサイズを取得
     const containerWidth = flowContainer.offsetWidth;
     const containerHeight = flowContainer.offsetHeight;
     
@@ -68,10 +68,6 @@ function flowComment(data) {
     if (!flowContainer || !settings.enableFlowComments) return;
     
     let textToFlow = '';
-    // HTMLタグが含まれる可能性があるため、Canvas計算用にテキストのみ抽出する必要があるが、
-    // 厳密な幅計算よりパフォーマンスを優先し、textToFlowの文字数から概算するか、
-    // あるいは割り切ってシンプルなテキストとして扱う。
-    // ここではHTMLが含まれる場合の簡易的なタグ除去を行う
     let pureText = '';
 
     switch (settings.flowContent) {
@@ -91,15 +87,14 @@ function flowComment(data) {
 
     if (!pureText || !pureText.trim()) return;
 
-    // ★最適化: Canvasで幅を計算
+    // Canvasで幅を計算
     const currentFont = settings.customFontFamily || settings.flowFontFamily;
-    // スーパーチャットなどはパディング分少し広めに取る
     const padding = data.specialType ? 40 : 20; 
     const commentWidth = measureTextWidth(pureText, settings.fontSize, currentFont) + padding;
 
     // レーンを探す
     const topPosition = findAvailableLane(commentWidth);
-    if (topPosition === null) return; // 空きがなければ描画しない（間引き）
+    if (topPosition === null) return; // 空きがなければ描画しない
 
     // DOM生成
     const el = document.createElement('div');
@@ -108,8 +103,10 @@ function flowComment(data) {
     el.style.fontSize = `${settings.fontSize}px`;
     el.style.top = `${topPosition}px`;
     el.style.left = '100%'; // CSSで制御するため初期位置は右端
-    // el.style.willChange = 'transform'; // CSSで指定済み
-
+    
+    // ★★★ 修正箇所: ここに透過度設定を追加 ★★★
+    el.style.opacity = settings.opacity; 
+    
     // 縁取り設定
     const width = Number(settings.strokeWidth) || 0;
     const color = settings.strokeColor || '#000000';
@@ -124,7 +121,6 @@ function flowComment(data) {
         el.classList.add('flow-superchat');
         el.style.backgroundColor = data.bgColor;
         el.style.color = settings.superchatColor;
-        // HTMLを含むためinnerHTML
         el.innerHTML = `<span class="superchat-author">${data.authorName}</span><span class="superchat-amount">${data.purchaseAmount}</span><div class="superchat-message">${textToFlow}</div>`;
     } else if (data.specialType === 'membership') {
         el.classList.add('flow-membership');
@@ -140,15 +136,11 @@ function flowComment(data) {
     
     flowContainer.appendChild(el);
 
-    // 強制リフローを起こさないように requestAnimationFrame を使用
     requestAnimationFrame(() => {
-        // コンテナ幅はキャッシュしておいたほうが良いが、ここは安全策で取得
         const containerWidth = flowContainer.offsetWidth; 
         el.style.transform = `translateX(-${containerWidth + commentWidth}px)`;
     });
 
-    // 完了後の削除には transitionend を使用して確実に行う
-    // (万が一イベントが発火しない場合のためにsetTimeoutも併用すると盤石だが、軽量化のためイベントリスナのみ)
     el.addEventListener('transitionend', () => {
         el.remove();
     });
