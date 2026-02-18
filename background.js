@@ -54,7 +54,12 @@ async function translateWithGoogle(text) {
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
         const data = await response.json();
-        const translation = data[0]?.[0]?.[0];
+        const translation = Array.isArray(data?.[0])
+            ? data[0]
+                .map((segment) => (Array.isArray(segment) ? segment[0] : ''))
+                .join('')
+                .trim()
+            : '';
         
         if (translation) {
             // ★追加: キャッシュサイズ制限
