@@ -57,6 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ngUsers: '', ngWords: '',
         profiles: {},
     };
+
+    let currentTabId = null; // ★追加: 現在のタブIDを保持
     
     const tabs = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
@@ -86,7 +88,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const debouncedSaveSettings = debounce(() => {
-        chrome.storage.sync.set(getSettingsFromForm());
+        // ★変更: オン・オフ設定は現在のタブ(local)に、それ以外は全体(sync)に保存
+        const currentFormSettings = getSettingsFromForm();
+        const tabStateKeys = ['enableInlineTranslation', 'enableFlowComments'];
+        const tabState = {};
+        const syncState = {};
+        
+        for (const [key, value] of Object.entries(currentFormSettings)) {
+            if (tabStateKeys.includes(key)) {
+                tabState[key] = value;
+            } else {
+                syncState[key] = value;
+            }
+        }
+        
+        chrome.storage.sync.set(syncState);
+        
+        if (currentTabId) {
+            chrome.storage.local.set({ [`tabState_${currentTabId}`]: tabState });
+        }
     }, 300);
 
     function loadSettings(settings) {
@@ -176,23 +196,51 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.opacity.addEventListener('input', (e) => { elements.opacityValue.textContent = e.target.value; });
     
     chrome.storage.onChanged.addListener((changes, area) => {
-        if (area !== 'sync') return;
+        if (area !== 'sync' && area !== 'local') return;
 
-        for (let [key, { newValue }] of Object.entries(changes)) {
-            const element = elements[key];
-            if (element) {
-                if (element.type === 'checkbox') {
-                    element.checked = newValue;
-                } else if (key !== 'profiles') { 
-                    element.value = newValue;
+        // ★変更: タブ固有設定(local)と全体設定(sync)の両方の変更をUIに反映
+        if (area === 'local' && currentTabId && changes[`tabState_${currentTabId}`]) {
+            const newTabState = changes[`tabState_${currentTabId}`].newValue || {};
+            if (elements.enableInlineTranslation && newTabState.enableInlineTranslation !== undefined) {
+                elements.enableInlineTranslation.checked = newTabState.enableInlineTranslation;
+            }
+            if (elements.enableFlowComments && newTabState.enableFlowComments !== undefined) {
+                elements.enableFlowComments.checked = newTabState.enableFlowComments;
+            }
+        }
+
+        if (area === 'sync') {
+            for (let [key, { newValue }] of Object.entries(changes)) {
+                if (key === 'enableInlineTranslation' || key === 'enableFlowComments') continue;
+                const element = elements[key];
+                if (element) {
+                    if (element.type === 'checkbox') {
+                        element.checked = newValue;
+                    } else if (key !== 'profiles') { 
+                        element.value = newValue;
+                    }
                 }
             }
         }
     });
 
-    chrome.storage.sync.get(defaults, (settings) => {
-        loadSettings(settings);
-        populateProfiles(settings.profiles);
+    // ★変更: 初期ロード時にタブIDを取得し、タブ固有設定をマージして読み込む
+    chrome.runtime.sendMessage({ action: 'getTabId' }, (response) => {
+        currentTabId = response?.tabId || null;
+        
+        chrome.storage.sync.get(defaults, (syncSettings) => {
+            if (currentTabId) {
+                chrome.storage.local.get(`tabState_${currentTabId}`, (localData) => {
+                    const tabState = localData[`tabState_${currentTabId}`] || {};
+                    const finalSettings = { ...syncSettings, ...tabState };
+                    loadSettings(finalSettings);
+                    populateProfiles(syncSettings.profiles);
+                });
+            } else {
+                loadSettings(syncSettings);
+                populateProfiles(syncSettings.profiles);
+            }
+        });
     });
 
     function toggleApiKeyInput(selected) {

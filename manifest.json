@@ -20,7 +20,8 @@
     "content_scripts": [
         {
             "matches": [
-                "*://www.youtube.com/*"
+                "*://www.youtube.com/*",
+                "*://m.youtube.com/*"
             ],
             "js": [
                 "translation.js",
@@ -35,6 +36,7 @@
     ],
     "host_permissions": [
         "*://www.youtube.com/*",
+        "*://m.youtube.com/*",
         "https://*.googleapis.com/*",
         "https://api-free.deepl.com/*",
         "https://translate.googleapis.com/*"

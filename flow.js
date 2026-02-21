@@ -1,7 +1,7 @@
 /**
  * flow.js
  * フローコメント（弾幕）関連の機能
- * ★画像（絵文字・ステッカー）の幅計算を補正する修正を追加
+ * ★モバイル向け軽量化・パフォーマンスチューニング版
  */
 
 // グローバル変数（content_script.jsで定義・初期化される）
@@ -12,7 +12,7 @@ const lanes = new Map();
 const LANE_COUNT = 15;
 
 /**
- * フローコメントを表示するための空きレーンを探す
+ * フローコメントを表示するための空きレーンを探す (メモリ・CPU最適化済)
  */
 function findAvailableLane(commentWidth) {
     if (!flowContainer) return null;
@@ -23,27 +23,32 @@ function findAvailableLane(commentWidth) {
     const marginTop = Number(settings.flowMarginTop) || 0;
     const marginBottom = Number(settings.flowMarginBottom) || 0;
     const drawableHeight = containerHeight - marginTop - marginBottom;
+    
     if (drawableHeight <= 0) return null;
     const laneHeight = drawableHeight / LANE_COUNT;
     
-    let laneCheckOrder = Array.from({ length: LANE_COUNT }, (_, i) => i);
-    if (settings.position === 'bottom_priority') {
-        laneCheckOrder.reverse();
-    } else if (settings.position === 'random') {
-        for (let i = laneCheckOrder.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [laneCheckOrder[i], laneCheckOrder[j]] = [laneCheckOrder[j], laneCheckOrder[i]];
+    // 無駄な配列生成を避け、空いているレーンのインデックスのみを収集
+    const availableIndices = [];
+    for (let i = 0; i < LANE_COUNT; i++) {
+        const laneBecomesFreeAt = lanes.get(i);
+        if (!laneBecomesFreeAt || now > laneBecomesFreeAt) {
+            availableIndices.push(i);
         }
     }
 
-    for (const i of laneCheckOrder) {
-        const laneBecomesFreeAt = lanes.get(i);
-        if (!laneBecomesFreeAt || now > laneBecomesFreeAt) {
-            lanes.set(i, now + requiredTime);
-            return (i * laneHeight) + marginTop;
-        }
+    if (availableIndices.length === 0) return null;
+
+    let selectedLane;
+    if (settings.position === 'random') {
+        selectedLane = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+    } else if (settings.position === 'bottom_priority') {
+        selectedLane = availableIndices[availableIndices.length - 1]; // 一番下の空きレーン
+    } else {
+        selectedLane = availableIndices[0]; // 一番上の空きレーン
     }
-    return null;
+
+    lanes.set(selectedLane, now + requiredTime);
+    return (selectedLane * laneHeight) + marginTop;
 }
 
 /**
@@ -65,25 +70,28 @@ function flowComment(data) {
     el.className = 'flow-comment';
     el.style.fontFamily = settings.customFontFamily || settings.flowFontFamily;
     el.style.fontSize = `${settings.fontSize}px`;
+    // DOM追加時の画面のチラつきを防ぐため透明にする
     el.style.opacity = '0';
     el.style.position = 'absolute';
-    el.style.top = '-9999px';
     el.style.fontWeight = 'bold';
     el.style.willChange = 'transform';
+    // 初期配置を画面外にしておく
+    el.style.left = '100%'; 
     
-    // 縁取り設定
+    // 軽量化された縁取り設定 (paint-orderを使用して超軽量かつ綺麗な縁取りを実現)
     const dropShadow = '1.5px 1.5px 3px rgba(0,0,0,0.9)';
     const width = Number(settings.strokeWidth) || 0;
     const color = settings.strokeColor || '#000000';
     
-    let textShadows = [dropShadow];
     if (width > 0) {
-        textShadows.push(`-${width}px -${width}px 0 ${color}`);
-        textShadows.push(`${width}px -${width}px 0 ${color}`);
-        textShadows.push(`-${width}px  ${width}px 0 ${color}`);
-        textShadows.push(`${width}px  ${width}px 0 ${color}`);
+        el.style.webkitTextStroke = `${width}px ${color}`;
+        el.style.textStroke = `${width}px ${color}`;
+        // 縁取りを文字の「内側」ではなく「外側・裏側」に描画させる（文字が細くならない）
+        el.style.paintOrder = 'stroke fill';
+        el.style.textShadow = dropShadow; 
+    } else {
+        el.style.textShadow = dropShadow;
     }
-    el.style.textShadow = textShadows.join(', ');
 
     if (data.specialType === 'superchat') {
         el.classList.add('flow-superchat');
@@ -99,49 +107,45 @@ function flowComment(data) {
         el.style.color = settings[`${data.userType}Color`] || settings.normalColor;
     }
     
-    // DOMに追加して幅を測定
+    // ★ DOM操作の最小化: 要素の追加・削除（レイアウトスラッシング）を1回で済ませる
     flowContainer.appendChild(el);
     let commentWidth = el.offsetWidth;
     
-    // ★★★ 画像の幅補正 ★★★
-    // <img>タグが含まれている場合、画像がロードされる前は width が 0 になることがあるため、
-    // HTML内のimgタグの数をカウントして、強制的に幅を加算する。
+    // 画像の幅補正
     const imgMatch = textToFlow.match(/<img/gi);
     const imgCount = imgMatch ? imgMatch.length : 0;
-    
-    // ステッカー（大きな画像）か、通常の絵文字かを判定
     const hasSticker = textToFlow.includes('style="height: 80px') || textToFlow.includes('yt-live-chat-paid-sticker-renderer');
     
-    // 通常の測定幅が極端に小さい（画像未ロード）かつ、画像タグがある場合
     if (commentWidth < (imgCount * settings.fontSize)) {
         if (hasSticker) {
-            // ステッカーの場合は大きく加算 (80px + マージン)
             commentWidth += 100; 
         } else {
-            // 絵文字の場合はフォントサイズ分を加算
             commentWidth += (imgCount * (settings.fontSize * 1.2));
         }
     }
 
-    flowContainer.removeChild(el);
-    
-    // 測定完了後、設定を適用
-    el.style.opacity = settings.opacity;
-    el.style.position = '';
-    el.style.top = '';
-
+    // 空きレーンを取得
     const topPosition = findAvailableLane(commentWidth);
-    if (topPosition === null) return;
+    
+    // 空きがない場合は削除して終了
+    if (topPosition === null) {
+        el.remove();
+        return;
+    }
 
-    el.style.transition = `transform ${settings.flowTime}s linear`;
+    // 配置とアニメーションの適用
     el.style.top = `${topPosition}px`;
     el.style.left = `${flowContainer.offsetWidth}px`;
+    el.style.transition = `transform ${settings.flowTime}s linear`;
     
-    flowContainer.appendChild(el);
+    // 透明状態を解除
+    el.style.opacity = settings.opacity;
 
+    // 次の描画フレームでアニメーションを開始
     requestAnimationFrame(() => {
         el.style.transform = `translateX(-${flowContainer.offsetWidth + commentWidth}px)`;
     });
 
+    // アニメーション完了後に要素を削除
     setTimeout(() => el.remove(), settings.flowTime * 1000 + 500);
 }

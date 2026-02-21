@@ -1,123 +1,134 @@
-/* --- ★★★ このファイル全体を置き換えてください ★★★ --- */
-
-/* チャット欄上部のボタンを格納するコンテナ */
-#enhancer-controls {
-    padding: 4px 16px;
-    border-bottom: 1px solid var(--yt-live-chat-border-color);
-    display: flex;
-    justify-content: flex-end; /* ボタンを右寄せに配置 */
-    gap: 8px; /* ボタン間の隙間 */
-    background-color: var(--yt-live-chat-primary-background-color);
-}
-
-/* 翻訳・コメントのオンオフボタンの共通スタイル */
-#toggle-translation-btn, #toggle-flow-btn, #ylc-settings-btn {
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: 50%; /* 円形 */
-    cursor: pointer;
-    font-size: 18px; /* アイコンのサイズ */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--yt-spec-badge-chip-background);
-    color: var(--yt-spec-text-secondary);
-    transition: background-color 0.2s, color 0.2s, opacity 0.2s;
-    opacity: 0.7;
-}
-
-/* ホバー時のスタイル */
-#toggle-translation-btn:hover, #toggle-flow-btn:hover, #ylc-settings-btn:hover {
-    opacity: 1;
-}
-
-/* 機能が有効(enabled)な時のスタイル */
-#toggle-translation-btn.enabled, #toggle-flow-btn.enabled {
-    background-color: #3ea6ff; /* オンを分かりやすく青色に */
-    color: white; /* アイコンの色を白に */
-    opacity: 1;
-}
-
-/* --- チャット内翻訳のスタイル --- */
-.inline-translation-container {
-    display: block;
-    font-size: 0.95em;
-    margin: 6px 0 0 4px;
-    padding: 4px 8px;
-    border-left: 3px solid #007bff;
-    color: #87ceeb;
-    white-space: pre-wrap;
-    word-break: break-word;
-    background-color: rgba(0,0,0,0.1);
-    border-radius: 0 4px 4px 0;
-}
-.inline-translation-container.error {
-    color: #ff8a80;
-    border-left-color: #ff8a80;
-}
-/* --- フローコメントのコンテナ --- */
+/* --- フローコメントのスタイル --- */
 #yt-flow-comment-container {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
-    height: 90%;
-    overflow: hidden;
+    height: 100%;
     pointer-events: none;
-    z-index: 100;
+    z-index: 1000;
+    overflow: hidden;
 }
-/* --- フローコメントの基本スタイル --- */
+
 .flow-comment {
     position: absolute;
     white-space: nowrap;
-    text-shadow: 1.5px 1.5px 3px rgba(0,0,0,0.9);
-    font-weight: bold;
-    will-change: transform;
-    padding: 4px 12px;
-    border-radius: 4px;
-}
-.flow-comment .flow-translation {
-    color: #a7d7f0;
-    margin-left: 0.5em;
-    font-size: 0.9em;
-}
-.flow-comment img {
-    height: 1.2em;
-    vertical-align: middle;
-    margin: 0 0.1em;
+    text-shadow: 1.5px 1.5px 3px rgba(0, 0, 0, 0.9);
+    letter-spacing: 0.05em;
+    pointer-events: none;
 }
 
-/* --- ★★★ ここからが追加/修正箇所 ★★★ --- */
-/* スーパーチャットのフロースタイル */
 .flow-superchat {
-    display: flex;
+    padding: 6px 12px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    display: inline-flex;
     flex-direction: column;
-    padding: 8px 16px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
 }
-.flow-superchat .superchat-author,
-.flow-superchat .superchat-amount {
-    display: inline;
-    margin-right: 8px;
+
+.superchat-author {
+    font-size: 0.8em;
     opacity: 0.9;
-}
-.flow-superchat .superchat-message {
-    margin-top: 4px;
-    font-size: 1.1em; /* メッセージを少し大きく */
+    margin-bottom: 2px;
 }
 
-/* メンバーシップ記念コメントのフロースタイル */
+.superchat-amount {
+    font-weight: bold;
+    font-size: 0.9em;
+    margin-bottom: 4px;
+}
+
+.superchat-message {
+    font-size: 1em;
+}
+
 .flow-membership {
-    padding: 6px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background-color: rgba(0, 0, 0, 0.3); /* 少し背景色を追加 */
+    padding: 4px 8px;
+    border-radius: 6px;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1px solid #00e676;
 }
-/* --- ★★★ ここまでが追加/修正箇所 ★★★ --- */
 
+.flow-translation {
+    opacity: 0.85;
+    font-size: 0.9em;
+    margin-left: 6px;
+}
 
-/* --- 設定パネルのスタイル --- */
+/* --- ★追加: チャット欄上部のコントロールUI (モダンなデザイン) --- */
+.ylc-enhancer-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px;
+    background-color: var(--yt-live-chat-background-color, transparent);
+    border-bottom: 1px solid var(--yt-spec-10-percent-layer, rgba(0,0,0,0.1));
+}
+
+.ylc-control-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 16px; /* 丸みを帯びたチップ形状 */
+    font-size: 13px;
+    font-weight: 500;
+    font-family: 'YouTube Noto', Roboto, Arial, sans-serif;
+    cursor: pointer;
+    background-color: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.05));
+    color: var(--yt-spec-text-secondary, #606060);
+    transition: all 0.2s ease;
+}
+
+/* ダークモード時の基本色 */
+html[dark] .ylc-control-btn {
+    background-color: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1));
+    color: var(--yt-spec-text-secondary, #aaaaaa);
+}
+
+.ylc-control-btn:hover {
+    background-color: var(--yt-spec-10-percent-layer, rgba(0, 0, 0, 0.1));
+    color: var(--yt-spec-text-primary, #0f0f0f);
+}
+
+html[dark] .ylc-control-btn:hover {
+    background-color: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.2));
+    color: var(--yt-spec-text-primary, #ffffff);
+}
+
+/* ★アクティブ（オン）状態 */
+.ylc-control-btn.enabled {
+    background-color: var(--yt-spec-call-to-action, #065fd4); /* YouTubeブルー */
+    color: #ffffff;
+}
+
+html[dark] .ylc-control-btn.enabled {
+    background-color: var(--yt-spec-call-to-action, #3ea6ff); /* ダークモード用ブルー */
+    color: #0f0f0f;
+}
+
+/* 設定ボタン (歯車アイコン用) */
+.ylc-control-btn.settings-btn {
+    padding: 6px;
+    border-radius: 50%;
+    background-color: transparent;
+}
+
+.ylc-control-btn.settings-btn:hover {
+    background-color: var(--yt-spec-10-percent-layer, rgba(0,0,0,0.1));
+}
+
+html[dark] .ylc-control-btn.settings-btn:hover {
+    background-color: var(--yt-spec-10-percent-layer, rgba(255,255,255,0.2));
+}
+
+.ylc-control-btn svg {
+    display: block;
+}
+
+/* --- 設定パネル --- */
 #ylc-settings-panel {
     display: none;
     flex-direction: column;
@@ -126,45 +137,57 @@
     right: 50px;
     transform: none;
     width: 460px;
+    max-width: 90vw; 
     height: 650px;
     max-height: calc(100vh - 100px);
     background-color: var(--yt-spec-menu-background, #ffffff);
-    border: 1px solid var(--yt-spec-10-percent-layer, #4d4d4d);
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    z-index: 99999;
+    border: 1px solid var(--yt-spec-10-percent-layer, #cccccc);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 9999;
+    overflow: hidden;
     resize: both;
-    overflow: auto;
 }
+
+html[dark] #ylc-settings-panel {
+    background-color: var(--yt-spec-menu-background, #212121);
+    border-color: var(--yt-spec-10-percent-layer, #444444);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
 #ylc-settings-header {
-    background-color: var(--yt-spec-brand-background-solid, #333);
-    color: var(--yt-spec-brand-text-solid, white);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     padding: 10px 15px;
+    background-color: var(--yt-spec-brand-background-solid, #f8f8f8);
+    border-bottom: 1px solid var(--yt-spec-10-percent-layer, #e0e0e0);
     font-weight: bold;
     cursor: move;
-    position: relative;
-    border-radius: 11px 11px 0 0;
-    flex-shrink: 0;
+    user-select: none;
+    color: var(--yt-spec-text-primary, #0f0f0f);
 }
+
+html[dark] #ylc-settings-header {
+    background-color: var(--yt-spec-brand-background-solid, #282828);
+    border-bottom-color: var(--yt-spec-10-percent-layer, #444444);
+    color: var(--yt-spec-text-primary, #f1f1f1);
+}
+
 #ylc-settings-close-btn {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    right: 10px;
     background: none;
     border: none;
-    color: var(--yt-spec-brand-text-solid, #aaa);
-    font-size: 24px;
+    font-size: 20px;
     cursor: pointer;
-    padding: 0 5px;
-    line-height: 1;
+    color: var(--yt-spec-text-secondary, #606060);
 }
-#ylc-settings-close-btn:hover {
-    opacity: 0.7;
+
+html[dark] #ylc-settings-close-btn {
+    color: var(--yt-spec-text-secondary, #aaaaaa);
 }
+
 #ylc-settings-iframe {
     flex-grow: 1;
     border: none;
     width: 100%;
-    height: 100%;
 }

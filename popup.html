@@ -2,76 +2,223 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>設定</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Live Chat Enhancer 設定</title>
 <style>
+    :root {
+        --bg-color: #1a1a1b;
+        --panel-bg: #272729;
+        --text-main: #e8e8e8;
+        --text-muted: #a0a0a0;
+        --accent: #3ea6ff;
+        --accent-hover: #65b8ff;
+        --danger: #ff4e4e;
+        --border: #444;
+        --radius: 8px;
+        --transition: 0.2s ease-in-out;
+    }
     body {
-        width: 400px; /* 少し幅を広げます */
-        padding: 10px 15px 15px;
-        font-family: sans-serif;
-        background-color: #2b2b2b;
-        color: #f0f0f0;
+        width: 100%;
+        max-width: 420px;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-main);
+    }
+    .header {
+        background-color: var(--panel-bg);
+        padding: 16px;
+        text-align: center;
+        border-bottom: 1px solid var(--border);
+        font-weight: bold;
+        font-size: 16px;
+        letter-spacing: 0.5px;
     }
     .tab-nav {
         display: flex;
-        border-bottom: 2px solid #555;
-        margin-bottom: 15px;
+        background-color: var(--panel-bg);
+        border-bottom: 1px solid var(--border);
+        overflow-x: auto;
     }
     .tab-btn {
-        padding: 10px 15px;
+        flex: 1;
+        padding: 14px 10px;
         cursor: pointer;
         background: none;
         border: none;
-        color: #aaa;
-        font-weight: bold;
-        font-size: 14px;
-        border-bottom: 2px solid transparent;
-        margin-bottom: -2px;
+        color: var(--text-muted);
+        font-weight: 600;
+        font-size: 13px;
+        white-space: nowrap;
+        border-bottom: 3px solid transparent;
+        transition: var(--transition);
+    }
+    .tab-btn:hover {
+        color: var(--text-main);
     }
     .tab-btn.active {
-        color: #fff;
-        border-bottom-color: #3ea6ff;
+        color: var(--accent);
+        border-bottom-color: var(--accent);
     }
     .tab-content {
         display: none;
+        padding: 20px;
     }
     .tab-content.active {
         display: block;
+        animation: fadeIn 0.3s;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
     }
     h4 {
-        border-bottom: 1px solid #555;
+        margin: 0 0 16px 0;
         padding-bottom: 8px;
-        margin-top: 20px;
-        margin-bottom: 15px;
-        font-size: 16px;
-        color: #ffffff;
+        font-size: 15px;
+        color: var(--accent);
+        border-bottom: 1px solid var(--border);
     }
-    .form-group { margin-bottom: 15px; }
-    .form-row { display: flex; gap: 10px; align-items: flex-end; }
+    .form-group { margin-bottom: 20px; }
+    .form-row { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 20px; }
     .col { flex: 1; }
-    label { display: block; margin-bottom: 5px; font-size: 14px; font-weight: bold; }
-    input::placeholder { color: #888; }
+    label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+    
     input[type="text"], input[type="password"], input[type="number"], select, textarea {
         width: 100%;
         box-sizing: border-box;
-        padding: 8px;
-        border: 1px solid #666;
-        border-radius: 4px;
-        background-color: #3c3c3c;
-        color: #f0f0f0;
-        font-family: sans-serif;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background-color: var(--panel-bg);
+        color: var(--text-main);
+        font-family: inherit;
+        font-size: 14px;
+        transition: var(--transition);
     }
-    input[type="color"] { width: 100%; height: 38px; padding: 2px; border: 1px solid #666; border-radius: 4px; background-color: transparent; }
-    .api-key-group { display: none; }
-    .badge { font-weight: normal; }
-    .note { font-size: 12px; color: #999; font-weight: normal; }
+    input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(62, 166, 255, 0.2);
+    }
+    
+    input[type="color"] {
+        width: 100%;
+        height: 42px;
+        padding: 2px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background-color: var(--panel-bg);
+        cursor: pointer;
+    }
+    
+    /* トグルスイッチのモダン化 */
+    .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0;
+        cursor: pointer;
+    }
+    .toggle-wrapper .toggle-label {
+        margin: 0;
+        font-size: 14px;
+        color: var(--text-main);
+        cursor: pointer;
+    }
+    .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 44px;
+        height: 24px;
+    }
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #555;
+        transition: .4s;
+        border-radius: 24px;
+    }
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+    }
+    input:checked + .slider {
+        background-color: var(--accent);
+    }
+    input:checked + .slider:before {
+        transform: translateX(20px);
+    }
+
+    /* レンジスライダーのモダン化 */
+    input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none; /* ★VS Codeの警告を解消するため追加 */
+        width: 100%;
+        height: 6px;
+        border-radius: 3px;
+        background: #555;
+        outline: none;
+        padding: 0;
+        border: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        transition: 0.2s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+        transform: scale(1.2);
+    }
+
+    .api-key-group { display: none; margin-top: 12px; }
+    .badge { font-weight: bold; color: var(--accent); }
+    .note { font-size: 12px; color: var(--text-muted); font-weight: normal; display: block; margin-top: 4px; }
+    
     .profile-actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 10px; }
-    .btn { padding: 8px 12px; border-radius: 4px; border: 1px solid #666; background-color: #4f4f4f; color: #fff; cursor: pointer; }
-    .btn:hover { background-color: #5f5f5f; }
-    .btn-danger { background-color: #8c3a3a; }
-    .btn-danger:hover { background-color: #a14444; }
+    .btn {
+        padding: 10px 16px;
+        border-radius: var(--radius);
+        border: none;
+        background-color: var(--accent);
+        color: #fff;
+        font-weight: bold;
+        cursor: pointer;
+        transition: var(--transition);
+        font-size: 14px;
+    }
+    .btn:hover { background-color: var(--accent-hover); }
+    .btn-danger { background-color: var(--panel-bg); border: 1px solid var(--danger); color: var(--danger); }
+    .btn-danger:hover { background-color: var(--danger); color: #fff; }
+    .btn-secondary { background-color: #444; }
+    .btn-secondary:hover { background-color: #555; }
 </style>
 </head>
 <body>
+
+    <div class="header">
+        Live Chat Enhancer 設定
+    </div>
 
     <div class="tab-nav">
         <button class="tab-btn active" data-tab="tab-general">基本設定</button>
@@ -81,31 +228,46 @@
     </div>
 
     <div id="tab-general" class="tab-content active">
-        <h4>基本設定</h4>
+        <h4>翻訳設定</h4>
         <div class="form-group">
             <label for="translator">翻訳サービス</label>
             <select id="translator">
                 <option value="google">Google翻訳 (APIキー不要)</option>
                 <option value="deepl">DeepL</option>
             </select>
+            
+            <div id="deepl-key-group" class="api-key-group">
+                <label for="deeplApiKey">DeepL APIキー</label>
+                <input type="password" id="deeplApiKey" placeholder="DeepL APIキー (Free or Pro)">
+            </div>
         </div>
+
+        <label class="toggle-wrapper">
+            <span class="toggle-label">DeepLエラー時にGoogle翻訳を利用</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="enableGoogleTranslateFallback">
+                <span class="slider"></span>
+            </label>
+        </label>
+
+        <h4 style="margin-top: 24px;">機能のオン・オフ</h4>
+        <label class="toggle-wrapper">
+            <span class="toggle-label">チャット欄に翻訳を表示</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="enableInlineTranslation">
+                <span class="slider"></span>
+            </label>
+        </label>
         
-        <div id="deepl-key-group" class="api-key-group">
-            <label for="deeplApiKey">DeepL APIキー</label>
-            <input type="password" id="deeplApiKey" placeholder="DeepL APIキー (Free or Pro)">
-        </div>
-        <div class="form-group">
-            <label><input type="checkbox" id="enableGoogleTranslateFallback"> DeepLエラー時にGoogle翻訳を利用</label>
-        </div>
+        <label class="toggle-wrapper" style="margin-bottom: 8px;">
+            <span class="toggle-label">画面にコメントを流す (フロー)</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="enableFlowComments">
+                <span class="slider"></span>
+            </label>
+        </label>
 
-        <h4>機能のオン・オフ</h4>
-        <div class="form-group">
-            <label><input type="checkbox" id="enableInlineTranslation"> チャット欄に翻訳を表示</label>
-            <br>
-            <label><input type="checkbox" id="enableFlowComments"> 画面にコメントを流す</label>
-        </div>
-
-        <h4>フローコメント設定</h4>
+        <h4 style="margin-top: 24px;">フローコメント設定</h4>
         <div class="form-group">
             <label for="flowContent">流す内容</label>
             <select id="flowContent">
@@ -115,80 +277,97 @@
             </select>
         </div>
         <div class="form-row">
-            <div class="col"><label for="flowTime">速度(秒)</label><input type="number" id="flowTime" min="1"></div>
-            <div class="col"><label for="fontSize">サイズ(px)</label><input type="number" id="fontSize" min="1"></div>
+            <div class="col"><label for="flowTime">速度 (秒)</label><input type="number" id="flowTime" min="1"></div>
+            <div class="col"><label for="fontSize">サイズ (px)</label><input type="number" id="fontSize" min="1"></div>
         </div>
         <div class="form-group">
             <label for="opacity">透過度: <span class="badge" id="opacityValue"></span></label>
-            <input type="range" id="opacity" min="0" max="1" step="0.1" style="width:100%;">
+            <input type="range" id="opacity" min="0" max="1" step="0.1">
         </div>
         <div class="form-row">
-            <div class="col"><label for="strokeWidth">縁取りの太さ(px)</label><input type="number" id="strokeWidth" min="0" step="0.1"></div>
+            <div class="col"><label for="strokeWidth">縁取り太さ (px)</label><input type="number" id="strokeWidth" min="0" step="0.1"></div>
             <div class="col"><label for="strokeColor">縁取りの色</label><input type="color" id="strokeColor"></div>
         </div>
         <div class="form-group">
-            <label for="position">表示方法</label>
-            <select id="position"><option value="top_priority">上から優先</option><option value="bottom_priority">下から優先</option><option value="random">ランダム</option></select>
+            <label for="position">表示位置の優先度</label>
+            <select id="position">
+                <option value="top_priority">上から優先</option>
+                <option value="bottom_priority">下から優先</option>
+                <option value="random">ランダム</option>
+            </select>
         </div>
         <div class="form-row">
-            <div class="col"><label for="flowMarginTop">上マージン(px)</label><input type="number" id="flowMarginTop" min="0"></div>
-            <div class="col"><label for="flowMarginBottom">下マージン(px)</label><input type="number" id="flowMarginBottom" min="0"></div>
+            <div class="col"><label for="flowMarginTop">上余白 (px)</label><input type="number" id="flowMarginTop" min="0"></div>
+            <div class="col"><label for="flowMarginBottom">下余白 (px)</label><input type="number" id="flowMarginBottom" min="0"></div>
         </div>
         <div class="form-group">
             <label for="flowFontFamily">フォント</label>
-            <select id="flowFontFamily"><option value="'ヒラギノ角ゴ Pro W3', 'Hiragino Kaku Gothic Pro', 'メイリオ', Meiryo, sans-serif">ゴシック体 (標準)</option><option value="'ヒラギノ明朝 Pro W3', 'Hiragino Mincho Pro', 'ＭＳ Ｐ明朝', 'MS PMincho', serif">明朝体</option><option value="'MS PGothic', sans-serif">MS Pゴシック</option><option value="Verdana, sans-serif">Verdana</option><option value="Arial, sans-serif">Arial</option><option value="Georgia, serif">Georgia</option></select>
+            <select id="flowFontFamily">
+                <option value="'ヒラギノ角ゴ Pro W3', 'Hiragino Kaku Gothic Pro', 'メイリオ', Meiryo, sans-serif">ゴシック体 (標準・PC向け)</option>
+                <option value="sans-serif">Android標準ゴシック</option>
+                <option value="'Noto Sans JP', 'Noto Sans CJK JP', sans-serif">Noto Sans JP (Android向け)</option>
+                <option value="'ヒラギノ明朝 Pro W3', 'Hiragino Mincho Pro', 'ＭＳ Ｐ明朝', 'MS PMincho', serif">明朝体 (PC向け)</option>
+                <option value="serif">Android標準明朝</option>
+                <option value="'MS PGothic', sans-serif">MS Pゴシック</option>
+            </select>
         </div>
         <div class="form-group">
-            <label for="customFontFamily">自由記述フォント <span class="note">(こちらが優先されます)</span></label>
-            <input type="text" id="customFontFamily" placeholder="例: 'Noto Sans JP', '游ゴシック体'">
+            <label for="customFontFamily">カスタムフォント名 <span class="note">※こちらが優先されます</span></label>
+            <input type="text" id="customFontFamily" placeholder="例: '游ゴシック体'">
         </div>
-        <h4>フローコメント色設定</h4>
-        <div class="form-row">
-            <div class="col"><label for="normalColor">通常</label><input type="color" id="normalColor"></div>
-            <div class="col"><label for="memberColor">メンバー</label><input type="color" id="memberColor"></div>
-            <div class="col"><label for="moderatorColor">モデレーター</label><input type="color" id="moderatorColor"></div>
-            <div class="col"><label for="superchatColor">スーパーチャット</label><input type="color" id="superchatColor"></div>
-            <div class="col"><label for="membershipColorFlow">新メンバー</label><input type="color" id="membershipColorFlow"></div>
+        
+        <h4 style="margin-top: 24px;">フロー文字色</h4>
+        <div class="form-row" style="flex-wrap: wrap;">
+            <div class="col" style="min-width: 30%;"><label for="normalColor">通常</label><input type="color" id="normalColor"></div>
+            <div class="col" style="min-width: 30%;"><label for="memberColor">メンバー</label><input type="color" id="memberColor"></div>
+            <div class="col" style="min-width: 30%;"><label for="moderatorColor">モデレーター</label><input type="color" id="moderatorColor"></div>
+            <div class="col" style="min-width: 30%;"><label for="superchatColor">スパチャ</label><input type="color" id="superchatColor"></div>
+            <div class="col" style="min-width: 30%;"><label for="membershipColorFlow">新メンバー</label><input type="color" id="membershipColorFlow"></div>
         </div>
     </div>
     
     <div id="tab-dictionary" class="tab-content">
-        <h4>単語登録</h4>
+        <h4>単語登録 (ユーザー辞書)</h4>
         <div class="form-group">
-            <label for="dictionary">登録リスト <span class="note">「元の単語,翻訳後の単語」の形式で1行に1つ入力</span></label>
-            <textarea id="dictionary" rows="12" placeholder="例: Holo,ホロ&#x0a;Gura,ぐら"></textarea>
+            <label for="dictionary">「元の単語,翻訳後の単語」で1行に1つ入力</label>
+            <textarea id="dictionary" rows="15" placeholder="例: Holo,ホロ&#x0a;Gura,ぐら"></textarea>
+            <span class="note">※大文字小文字は区別されません。固有の略語や名前を登録すると翻訳精度が向上します。</span>
         </div>
     </div>
 
     <div id="tab-ng" class="tab-content">
-        <h4>NG設定</h4>
+        <h4>NGユーザー設定</h4>
         <div class="form-group">
-            <label for="ngUsers">NGユーザー <span class="note">(1行に1人)</span></label>
-            <textarea id="ngUsers" rows="8" placeholder="NGにしたいユーザー名を入力"></textarea>
+            <label for="ngUsers">1行に1人入力</label>
+            <textarea id="ngUsers" rows="6" placeholder="NGにしたいユーザー名"></textarea>
         </div>
+        <h4 style="margin-top: 24px;">NGワード設定</h4>
         <div class="form-group">
-            <label for="ngWords">NGワード <span class="note">(1行に1つ)</span></label>
-            <textarea id="ngWords" rows="8" placeholder="NGにしたい単語を入力"></textarea>
+            <label for="ngWords">1行に1つ入力</label>
+            <textarea id="ngWords" rows="6" placeholder="NGにしたい単語"></textarea>
         </div>
     </div>
 
     <div id="tab-profiles" class="tab-content">
-        <h4>プロファイル管理</h4>
+        <h4>プロファイルの保存</h4>
         <div class="form-group">
-            <label for="profileName">プロファイル名</label>
-            <input type="text" id="profileName" placeholder="保存・削除するプロファイル名">
+            <label for="profileName">新しいプロファイル名</label>
+            <div class="profile-actions">
+                <input type="text" id="profileName" placeholder="例: 英語配信用">
+                <button id="saveProfileBtn" class="btn">保存</button>
+            </div>
         </div>
-        <div class="profile-actions">
-            <button id="saveProfileBtn" class="btn">現在の設定を保存</button>
-            <button id="deleteProfileBtn" class="btn btn-danger">選択したプロファイルを削除</button>
-        </div>
-        <hr style="border-color:#555; margin: 20px 0;">
+        
+        <h4 style="margin-top: 32px;">プロファイルの読み込み</h4>
         <div class="form-group">
             <label for="profileSelector">保存済みプロファイル</label>
             <div class="profile-actions">
                 <select id="profileSelector"></select>
-                <button id="loadProfileBtn" class="btn">読み込む</button>
+                <button id="loadProfileBtn" class="btn btn-secondary">読み込む</button>
             </div>
+        </div>
+        <div style="margin-top: 16px; text-align: right;">
+            <button id="deleteProfileBtn" class="btn btn-danger" style="width: 100%;">選択したプロファイルを削除</button>
         </div>
     </div>
 
