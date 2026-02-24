@@ -122,7 +122,8 @@ function parseComment(node) {
         baseComment.bgColor = node.style.getPropertyValue('--yt-live-chat-paid-sticker-background-color') || '#ff0000';
         
         if (stickerImg) {
-            baseComment.html = `<img src="${stickerImg.src}" style="height: 80px; width: auto; vertical-align: middle;">`;
+            // 固定サイズ指定を削除し、CSSによる自動サイズ調整に任せる
+            baseComment.html = `<img src="${stickerImg.src}">`;
             baseComment.text = '[Super Sticker]';
         }
     }
@@ -131,7 +132,8 @@ function parseComment(node) {
         const giftImg = node.querySelector('#gift-image > img');
         
         baseComment.specialType = 'membership';
-        baseComment.html = (headerEl ? headerEl.innerHTML : '') + (giftImg ? `<br><img src="${giftImg.src}" style="height: 1.5em; vertical-align: middle;">` : '');
+        // 固定サイズ指定を削除し、CSSによる自動サイズ調整に任せる
+        baseComment.html = (headerEl ? headerEl.innerHTML : '') + (giftImg ? `<br><img src="${giftImg.src}">` : '');
         baseComment.text = headerEl ? headerEl.textContent : '[Gift Purchase]';
     }
     else if (tagName === 'YT-LIVE-CHAT-GIFT-MEMBERSHIP-RECEIVED-RENDERER') {
@@ -265,13 +267,10 @@ function processNewCommentNode(node) {
         }
     };
 
-    // --- ★改修ポイント: 日本語・絵文字のみのコメントを除外する処理 ---
-    
     // 日本語（ひらがな、カタカナ、漢字）が含まれているか
     const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf]/.test(comment.text);
     
-    // 翻訳対象となる意味のある文字（英数字、ハングル、ラテン文字など）が含まれているか
-    // ※これがない場合は、絵文字や記号だけのコメントと判定されます
+    // 翻訳対象となる意味のある文字が含まれているか
     const hasForeignCharacters = /[a-zA-Z0-9\uac00-\ud7a3\u0400-\u04ff\u0e00-\u0e7f\xc0-\u017f]/.test(comment.text);
 
     // 翻訳を実行する条件

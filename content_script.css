@@ -55,7 +55,7 @@
     margin-left: 6px;
 }
 
-/* --- ★追加: チャット欄上部のコントロールUI (モダンなデザイン) --- */
+/* --- チャット欄上部のコントロールUI (モダンなデザイン) --- */
 .ylc-enhancer-controls {
     display: flex;
     align-items: center;
@@ -98,7 +98,7 @@ html[dark] .ylc-control-btn:hover {
     color: var(--yt-spec-text-primary, #ffffff);
 }
 
-/* ★アクティブ（オン）状態 */
+/* アクティブ（オン）状態 */
 .ylc-control-btn.enabled {
     background-color: var(--yt-spec-call-to-action, #065fd4); /* YouTubeブルー */
     color: #ffffff;
@@ -190,4 +190,12 @@ html[dark] #ylc-settings-close-btn {
     flex-grow: 1;
     border: none;
     width: 100%;
+}
+
+/* --- フローコメント内の画像（絵文字・スタンプ等）のサイズ調整 --- */
+.flow-comment img {
+    height: 1.2em !important; /* 文字サイズ（1em）に連動して少し大きめに表示 */
+    width: auto !important;
+    vertical-align: middle !important; /* 文字の中央と高さを合わせる */
+    margin: 0 2px !important; /* 文字と画像の間隔を少し空ける */
 }

@@ -111,17 +111,12 @@ function flowComment(data) {
     flowContainer.appendChild(el);
     let commentWidth = el.offsetWidth;
     
-    // 画像の幅補正
+    // 画像がまだロードされていない段階での幅を予測して補正（画像はCSSで1.2emに統一されているためシンプル化）
     const imgMatch = textToFlow.match(/<img/gi);
     const imgCount = imgMatch ? imgMatch.length : 0;
-    const hasSticker = textToFlow.includes('style="height: 80px') || textToFlow.includes('yt-live-chat-paid-sticker-renderer');
     
     if (commentWidth < (imgCount * settings.fontSize)) {
-        if (hasSticker) {
-            commentWidth += 100; 
-        } else {
-            commentWidth += (imgCount * (settings.fontSize * 1.2));
-        }
+        commentWidth += (imgCount * (settings.fontSize * 1.2));
     }
 
     // 空きレーンを取得
