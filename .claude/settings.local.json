@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(git add content_script.js content_script.css)",
-      "Bash(git commit:*)"
-    ]
-  }
-}
