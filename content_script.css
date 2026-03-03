@@ -58,12 +58,10 @@
 /* --- 動画プレーヤー内オーバーレイコントロール --- */
 .ylc-player-controls {
     position: absolute;
-    top: 12px;
-    right: 12px;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
+    gap: 6px;
+    padding: 4px;
     background-color: rgba(0, 0, 0, 0.6);
     border-radius: 20px;
     z-index: 2000;
@@ -71,6 +69,12 @@
     pointer-events: none;
     transition: opacity 0.3s ease;
 }
+
+/* オーバーレイ位置バリエーション */
+.ylc-pos-top_right    { top: 12px; right: 12px; }
+.ylc-pos-top_left     { top: 12px; left: 12px; }
+.ylc-pos-bottom_right { bottom: 60px; right: 12px; }
+.ylc-pos-bottom_left  { bottom: 60px; left: 12px; }
 
 /* YouTubeコントロール表示時（ytp-autohideなし）にオーバーレイを表示 */
 #movie_player:not(.ytp-autohide) .ylc-player-controls {
@@ -87,10 +91,10 @@
 .ylc-control-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
+    justify-content: center;
+    padding: 6px;
     border: none;
-    border-radius: 14px;
+    border-radius: 50%;
     font-size: 12px;
     font-weight: 500;
     font-family: 'YouTube Noto', Roboto, Arial, sans-serif;

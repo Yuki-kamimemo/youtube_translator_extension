@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
         moderatorColor: document.getElementById('moderatorColor'),
         superchatColor: document.getElementById('superchatColor'),
         membershipColorFlow: document.getElementById('membershipColorFlow'),
+        overlayPosition: document.getElementById('overlayPosition'),
         dictionary: document.getElementById('dictionary'),
         ngUsers: document.getElementById('ngUsers'),
         ngWords: document.getElementById('ngWords'),
@@ -53,7 +54,8 @@ document.addEventListener('DOMContentLoaded', () => {
         normalColor: '#FFFFFF', memberColor: '#28a745', moderatorColor: '#007bff',
         superchatColor: '#FFFFFF',
         membershipColorFlow: '#00e676',
-        dictionary: '', 
+        overlayPosition: 'top_right',
+        dictionary: '',
         ngUsers: '', ngWords: '',
         profiles: {},
     };

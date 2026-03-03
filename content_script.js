@@ -24,6 +24,7 @@ const DEFAULTS = {
     normalColor: '#FFFFFF', memberColor: '#28a745', moderatorColor: '#007bff',
     superchatColor: '#FFFFFF',
     membershipColorFlow: '#00e676',
+    overlayPosition: 'top_right',
     dictionary: '',
     ngUsers: '', ngWords: '',
 };
@@ -164,9 +165,9 @@ function createToggleButton(id, settingKey, labelPrefix, parentContainer) {
     
     const getIconHTML = (type) => {
         if (type === 'translation') {
-            return `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg><span class="btn-text">翻訳</span>`;
+            return `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>`;
         } else {
-            return `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12zM7 9h10v2H7zm0-3h10v2H7zm0 6h7v2H7z"/></svg><span class="btn-text">フロー</span>`;
+            return `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12zM7 9h10v2H7zm0-3h10v2H7zm0 6h7v2H7z"/></svg>`;
         }
     };
     
@@ -226,6 +227,38 @@ function createSettingsPanel() {
     panel.appendChild(header);
     panel.appendChild(iframe);
     document.body.appendChild(panel);
+
+    // レイアウト保存用デバウンス
+    let layoutSaveTimer = null;
+    const saveLayout = () => {
+        clearTimeout(layoutSaveTimer);
+        layoutSaveTimer = setTimeout(() => {
+            if (chrome.runtime?.id) {
+                chrome.storage.local.set({
+                    settingsPanelLayout: {
+                        top: panel.offsetTop,
+                        left: panel.offsetLeft,
+                        width: panel.offsetWidth,
+                        height: panel.offsetHeight,
+                    }
+                });
+            }
+        }, 500);
+    };
+
+    // 保存済みレイアウトを復元
+    chrome.storage.local.get('settingsPanelLayout', (data) => {
+        const layout = data.settingsPanelLayout;
+        if (layout) {
+            if (layout.top != null) panel.style.top = `${layout.top}px`;
+            if (layout.left != null) panel.style.left = `${layout.left}px`;
+            if (layout.width != null) panel.style.width = `${layout.width}px`;
+            if (layout.height != null) panel.style.height = `${layout.height}px`;
+            panel.style.right = 'auto';
+        }
+    });
+
+    // ドラッグ処理
     let isDragging = false;
     let offsetX, offsetY;
     header.onmousedown = (e) => {
@@ -238,12 +271,24 @@ function createSettingsPanel() {
         if (isDragging) {
             panel.style.left = `${e.clientX - offsetX}px`;
             panel.style.top = `${e.clientY - offsetY}px`;
+            panel.style.right = 'auto';
         }
     };
     document.onmouseup = () => {
-        isDragging = false;
-        panel.style.transition = '';
+        if (isDragging) {
+            isDragging = false;
+            panel.style.transition = '';
+            saveLayout();
+        }
     };
+
+    // リサイズ検知
+    const resizeObserver = new ResizeObserver(() => {
+        if (panel.style.display !== 'none') {
+            saveLayout();
+        }
+    });
+    resizeObserver.observe(panel);
 }
 
 function processNewCommentNode(node) {
@@ -282,7 +327,7 @@ function processNewCommentNode(node) {
                             hasForeignCharacters;
 
     if (shouldTranslate) {
-        chrome.runtime.sendMessage({ action: "translate", text: comment.text }, (result) => {
+        enqueueTranslation(comment.text, (result) => {
             if (result && result.error) {
                 displayInlineTranslation(node, `[${result.error}]`, true);
             } else if (result && result.translation) {
@@ -296,6 +341,9 @@ function processNewCommentNode(node) {
     }
 }
 
+const translatedNodes = [];
+const MAX_TRANSLATED_NODES = 200;
+
 function displayInlineTranslation(node, text, isError = false) {
     const messageEl = node.querySelector('#message');
     if (!messageEl) return;
@@ -306,6 +354,14 @@ function displayInlineTranslation(node, text, isError = false) {
     transEl.style.fontSize = '0.9em';
     transEl.style.marginTop = '2px';
     messageEl.appendChild(transEl);
+
+    // DOM蓄積防止: 古い翻訳要素を削除
+    translatedNodes.push(node);
+    if (translatedNodes.length > MAX_TRANSLATED_NODES) {
+        const oldNode = translatedNodes.shift();
+        const oldTrans = oldNode.querySelector('.ylc-inline-translation');
+        if (oldTrans) oldTrans.remove();
+    }
 }
 
 function startChatObserver(chatItemsEl) {
@@ -375,6 +431,35 @@ function createHiddenIframe(videoId) {
     document.body.appendChild(hiddenChatIframe);
 }
 
+// 翻訳スロットリング
+const translationQueue = [];
+let translationActive = 0;
+const MAX_CONCURRENT_TRANSLATIONS = 3;
+const MAX_QUEUE_SIZE = 50;
+const THROTTLE_INTERVAL = 50;
+
+function enqueueTranslation(text, callback) {
+    if (translationQueue.length >= MAX_QUEUE_SIZE) {
+        translationQueue.shift(); // 古いリクエストを破棄
+    }
+    translationQueue.push({ text, callback });
+    processTranslationQueue();
+}
+
+function processTranslationQueue() {
+    while (translationActive < MAX_CONCURRENT_TRANSLATIONS && translationQueue.length > 0) {
+        const { text, callback } = translationQueue.shift();
+        translationActive++;
+        chrome.runtime.sendMessage({ action: "translate", text }, (result) => {
+            translationActive--;
+            callback(result);
+            if (translationQueue.length > 0) {
+                setTimeout(processTranslationQueue, THROTTLE_INTERVAL);
+            }
+        });
+    }
+}
+
 const processedCommentIds = new Set();
 const processedCommentIdsQueue = [];
 
@@ -423,7 +508,7 @@ async function initializeTopLevel() {
         if (player && !document.getElementById('ylc-player-controls')) {
             const overlay = document.createElement('div');
             overlay.id = 'ylc-player-controls';
-            overlay.className = 'ylc-player-controls';
+            overlay.className = `ylc-player-controls ylc-pos-${settings.overlayPosition || 'top_right'}`;
 
             createToggleButton('toggle-translation-btn', 'enableInlineTranslation', '翻訳', overlay);
             createToggleButton('toggle-flow-btn', 'enableFlowComments', 'コメント表示', overlay);
@@ -500,7 +585,14 @@ async function main() {
         }
 
         if (ngListsChanged) updateNgLists();
-        
+
+        if (!IS_IN_IFRAME && changes.overlayPosition) {
+            const overlay = document.getElementById('ylc-player-controls');
+            if (overlay) {
+                overlay.className = `ylc-player-controls ylc-pos-${changes.overlayPosition.newValue || 'top_right'}`;
+            }
+        }
+
         if (!IS_IN_IFRAME) {
             const transBtn = document.getElementById('toggle-translation-btn');
             if (transBtn && uiUpdateTrans) {
