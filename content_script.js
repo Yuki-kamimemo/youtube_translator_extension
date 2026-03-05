@@ -8,9 +8,9 @@ let settings = {};
 let chatObserver = null;
 let ngUserList = [];
 let ngWordList = [];
-let flowContainer = null; 
-let isInitialized = false; 
-let initializationRetryTimer = null; 
+let flowContainer = null;
+let isInitialized = false;
+let initializationRetryTimer = null;
 let hiddenChatIframe = null;
 let currentTabId = null;
 
@@ -63,7 +63,7 @@ function waitForElement(selector, parent = document, timeout = 15000) {
 function parseComment(node) {
     const authorEl = node.querySelector('#author-name');
     const messageEl = node.querySelector('#message');
-    
+
     const authorTypeAttr = node.getAttribute('author-type');
     let userType = 'normal';
     if (authorTypeAttr === 'moderator') userType = 'moderator';
@@ -83,10 +83,10 @@ function parseComment(node) {
             baseComment.html = messageEl.innerHTML;
             baseComment.text = messageEl.textContent || '';
             if (!baseComment.text.trim() && messageEl.querySelector('img')) {
-                 baseComment.text = ' '; 
+                baseComment.text = ' ';
             }
         }
-    } 
+    }
     else if (tagName === 'YT-LIVE-CHAT-PAID-MESSAGE-RENDERER') {
         const purchaseAmountEl = node.querySelector('#purchase-amount');
         if (messageEl) {
@@ -96,7 +96,7 @@ function parseComment(node) {
         baseComment.specialType = 'superchat';
         baseComment.purchaseAmount = purchaseAmountEl ? purchaseAmountEl.textContent.trim() : '';
         baseComment.bgColor = node.style.getPropertyValue('--yt-live-chat-paid-message-primary-color') || '#ff0000';
-    } 
+    }
     else if (tagName === 'YT-LIVE-CHAT-MEMBERSHIP-ITEM-RENDERER') {
         const headerSubtextEl = node.querySelector('#header-subtext');
         let membershipHtml = '';
@@ -117,11 +117,11 @@ function parseComment(node) {
     else if (tagName === 'YT-LIVE-CHAT-PAID-STICKER-RENDERER') {
         const purchaseAmountEl = node.querySelector('#purchase-amount-chip');
         const stickerImg = node.querySelector('#sticker > img');
-        
-        baseComment.specialType = 'superchat'; 
+
+        baseComment.specialType = 'superchat';
         baseComment.purchaseAmount = purchaseAmountEl ? purchaseAmountEl.textContent.trim() : '';
         baseComment.bgColor = node.style.getPropertyValue('--yt-live-chat-paid-sticker-background-color') || '#ff0000';
-        
+
         if (stickerImg) {
             // 固定サイズ指定を削除し、CSSによる自動サイズ調整に任せる
             baseComment.html = `<img src="${stickerImg.src}">`;
@@ -131,7 +131,7 @@ function parseComment(node) {
     else if (tagName === 'YT-LIVE-CHAT-MEMBERSHIP-GIFT-PURCHASE-RENDERER') {
         const headerEl = node.querySelector('#header');
         const giftImg = node.querySelector('#gift-image > img');
-        
+
         baseComment.specialType = 'membership';
         // 固定サイズ指定を削除し、CSSによる自動サイズ調整に任せる
         baseComment.html = (headerEl ? headerEl.innerHTML : '') + (giftImg ? `<br><img src="${giftImg.src}">` : '');
@@ -162,7 +162,7 @@ function createToggleButton(id, settingKey, labelPrefix, parentContainer) {
     const button = document.createElement('button');
     button.id = id;
     button.className = 'ylc-control-btn';
-    
+
     const getIconHTML = (type) => {
         if (type === 'translation') {
             return `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>`;
@@ -170,7 +170,7 @@ function createToggleButton(id, settingKey, labelPrefix, parentContainer) {
             return `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12zM7 9h10v2H7zm0-3h10v2H7zm0 6h7v2H7z"/></svg>`;
         }
     };
-    
+
     button.innerHTML = getIconHTML(id === 'toggle-translation-btn' ? 'translation' : 'flow');
 
     const updateButton = (isEnabled) => {
@@ -250,41 +250,67 @@ function createSettingsPanel() {
     chrome.storage.local.get('settingsPanelLayout', (data) => {
         const layout = data.settingsPanelLayout;
         if (layout) {
+            if (layout.width > 50) panel.style.width = `${layout.width}px`;
+            if (layout.height > 50) panel.style.height = `${layout.height}px`;
             if (layout.top != null) panel.style.top = `${layout.top}px`;
             if (layout.left != null) panel.style.left = `${layout.left}px`;
-            if (layout.width != null) panel.style.width = `${layout.width}px`;
-            if (layout.height != null) panel.style.height = `${layout.height}px`;
             panel.style.right = 'auto';
         }
     });
 
-    // ドラッグ処理
+    // ドラッグ処理 (モバイルでは無効化)
     let isDragging = false;
     let offsetX, offsetY;
+
+    const isMobile = () => window.innerWidth <= 768;
+
     header.onmousedown = (e) => {
+        if (isMobile()) return; // モバイル幅ではドラッグ開始しない
         isDragging = true;
         offsetX = e.clientX - panel.offsetLeft;
         offsetY = e.clientY - panel.offsetTop;
         panel.style.transition = 'none';
     };
-    document.onmousemove = (e) => {
-        if (isDragging) {
+
+    // タッチイベントのサポート (必要な場合のみ、基本はCSSで固定されるため不要)
+    header.addEventListener('touchstart', (e) => {
+        if (isMobile()) return;
+        isDragging = true;
+        offsetX = e.touches[0].clientX - panel.offsetLeft;
+        offsetY = e.touches[0].clientY - panel.offsetTop;
+        panel.style.transition = 'none';
+    }, { passive: true });
+
+    document.addEventListener('mousemove', (e) => {
+        if (isDragging && !isMobile()) {
             panel.style.left = `${e.clientX - offsetX}px`;
             panel.style.top = `${e.clientY - offsetY}px`;
             panel.style.right = 'auto';
         }
-    };
-    document.onmouseup = () => {
+    });
+
+    document.addEventListener('touchmove', (e) => {
+        if (isDragging && !isMobile()) {
+            panel.style.left = `${e.touches[0].clientX - offsetX}px`;
+            panel.style.top = `${e.touches[0].clientY - offsetY}px`;
+            panel.style.right = 'auto';
+        }
+    }, { passive: true });
+
+    const endDrag = () => {
         if (isDragging) {
             isDragging = false;
             panel.style.transition = '';
-            saveLayout();
+            if (!isMobile()) saveLayout();
         }
     };
+    document.addEventListener('mouseup', endDrag);
+    document.addEventListener('touchend', endDrag);
 
     // リサイズ検知
     const resizeObserver = new ResizeObserver(() => {
-        if (panel.style.display !== 'none') {
+        // inline styleが設定されていない初期状態(""と評価される)を防ぐため、表示状態でかつサイズがある場合のみ保存
+        if (panel.style.display === 'flex' && panel.offsetWidth > 50 && panel.offsetHeight > 50) {
             saveLayout();
         }
     });
@@ -314,17 +340,17 @@ function processNewCommentNode(node) {
 
     // 日本語（ひらがな、カタカナ、漢字）が含まれているか
     const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf]/.test(comment.text);
-    
+
     // 翻訳対象となる意味のある文字が含まれているか
     const hasForeignCharacters = /[a-zA-Z0-9\uac00-\ud7a3\u0400-\u04ff\u0e00-\u0e7f\xc0-\u017f]/.test(comment.text);
 
     // 翻訳を実行する条件
-    const shouldTranslate = settings.enableInlineTranslation && 
-                            comment.text && 
-                            !comment.text.startsWith('[') && 
-                            !comment.text.startsWith('<') &&
-                            !hasJapanese && 
-                            hasForeignCharacters;
+    const shouldTranslate = settings.enableInlineTranslation &&
+        comment.text &&
+        !comment.text.startsWith('[') &&
+        !comment.text.startsWith('<') &&
+        !hasJapanese &&
+        hasForeignCharacters;
 
     if (shouldTranslate) {
         enqueueTranslation(comment.text, (result) => {
@@ -370,16 +396,42 @@ function startChatObserver(chatItemsEl) {
         'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER',
         'YT-LIVE-CHAT-PAID-MESSAGE-RENDERER',
         'YT-LIVE-CHAT-MEMBERSHIP-ITEM-RENDERER',
-        'YT-LIVE-CHAT-PAID-STICKER-RENDERER',           
-        'YT-LIVE-CHAT-MEMBERSHIP-GIFT-PURCHASE-RENDERER', 
-        'YT-LIVE-CHAT-GIFT-MEMBERSHIP-RECEIVED-RENDERER'  
+        'YT-LIVE-CHAT-PAID-STICKER-RENDERER',
+        'YT-LIVE-CHAT-MEMBERSHIP-GIFT-PURCHASE-RENDERER',
+        'YT-LIVE-CHAT-GIFT-MEMBERSHIP-RECEIVED-RENDERER'
     ];
+
+    // VOD・シーク時のバースト読み込み制御用変数
+    const MAX_BURST_COMMENTS = 5; // 一度に処理・フローに流す最大件数
+
     chatObserver = new MutationObserver(mutations => {
-        mutations.forEach(m => m.addedNodes.forEach(node => {
-            if (node.nodeType === 1 && targetNodeTypes.includes(node.tagName.toUpperCase())) { 
-                processNewCommentNode(node);
+        // mutations 内のすべての追加ノードを平坦化して収集
+        const allAddedNodes = [];
+        for (const m of mutations) {
+            for (const node of m.addedNodes) {
+                if (node.nodeType === 1 && targetNodeTypes.includes(node.tagName.toUpperCase())) {
+                    allAddedNodes.push(node);
+                }
             }
-        }));
+        }
+
+        if (allAddedNodes.length === 0) return;
+
+        // 大量に追加された場合（VODシーク時など）は、最新の数件だけを処理する
+        let nodesToProcess = allAddedNodes;
+        if (allAddedNodes.length > MAX_BURST_COMMENTS) {
+            // console.log(`[YLC Enhancer] Burst detected: ${allAddedNodes.length} comments. Throttling to ${MAX_BURST_COMMENTS}.`);
+            // 大量に来た場合でもインライン表示用には最低限処理を通すが、
+            // フローコメント用のフラグ（isBurst）を立てて流量を制限する
+            nodesToProcess = allAddedNodes.slice(-MAX_BURST_COMMENTS);
+
+            // スキップされたノードのインライン翻訳だけは無理せず非同期で流す（現状は負荷を下げるため完全スキップも手）
+            // ここではパフォーマンス優先で、間引かれたものは processNewCommentNode にすら渡さない
+        }
+
+        nodesToProcess.forEach(node => {
+            processNewCommentNode(node);
+        });
     });
     chatObserver.observe(chatItemsEl, { childList: true });
 }
@@ -390,7 +442,7 @@ function setupHiddenChat() {
     if (!videoId) return;
 
     if (hiddenChatIframe) {
-        if (hiddenChatIframe.dataset.videoId === videoId) return; 
+        if (hiddenChatIframe.dataset.videoId === videoId) return;
         hiddenChatIframe.remove();
         hiddenChatIframe = null;
     }
@@ -421,7 +473,7 @@ function createHiddenIframe(videoId) {
     hiddenChatIframe.dataset.videoId = videoId;
     hiddenChatIframe.src = `https://www.youtube.com/live_chat?v=${videoId}&is_popout=1`;
     hiddenChatIframe.style.position = 'fixed';
-    hiddenChatIframe.style.width = '300px'; 
+    hiddenChatIframe.style.width = '300px';
     hiddenChatIframe.style.height = '500px';
     hiddenChatIframe.style.opacity = '0';
     hiddenChatIframe.style.pointerEvents = 'none';
@@ -466,7 +518,7 @@ const processedCommentIdsQueue = [];
 function handleFlowCommentData(data) {
     if (!data) return;
     if (data.id) {
-        if (processedCommentIds.has(data.id)) return; 
+        if (processedCommentIds.has(data.id)) return;
         processedCommentIds.add(data.id);
         processedCommentIdsQueue.push(data.id);
         if (processedCommentIdsQueue.length > 2000) {
@@ -544,7 +596,7 @@ async function main() {
 
         const loadedSettings = await new Promise(resolve => chrome.storage.sync.get(DEFAULTS, resolve));
         Object.assign(settings, loadedSettings);
-        
+
         if (currentTabId) {
             const localData = await new Promise(resolve => chrome.storage.local.get(`tabState_${currentTabId}`, resolve));
             const tabState = localData[`tabState_${currentTabId}`] || {};
@@ -555,7 +607,7 @@ async function main() {
         updateNgLists();
     } catch (e) {
         console.error('[YLC Enhancer] Failed to load settings:', e);
-        return; 
+        return;
     }
 
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -617,7 +669,7 @@ async function main() {
         }
         if (isInitialized && initializationRetryTimer) {
             clearInterval(initializationRetryTimer);
-            initializationRetryTimer = null; 
+            initializationRetryTimer = null;
         }
     };
 

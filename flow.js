@@ -23,10 +23,10 @@ function findAvailableLane(commentWidth) {
     const marginTop = Number(settings.flowMarginTop) || 0;
     const marginBottom = Number(settings.flowMarginBottom) || 0;
     const drawableHeight = containerHeight - marginTop - marginBottom;
-    
+
     if (drawableHeight <= 0) return null;
     const laneHeight = drawableHeight / LANE_COUNT;
-    
+
     // 無駄な配列生成を避け、空いているレーンのインデックスのみを収集
     const availableIndices = [];
     for (let i = 0; i < LANE_COUNT; i++) {
@@ -56,7 +56,13 @@ function findAvailableLane(commentWidth) {
  */
 function flowComment(data) {
     if (!flowContainer || !settings.enableFlowComments) return;
-    
+
+    // 二重の安全策：画面上のフローコメント数が多すぎる場合は描画をスキップ（VODシーク時の暴発対策）
+    const MAX_ONSCREEN_COMMENTS = 60;
+    if (flowContainer.childElementCount > MAX_ONSCREEN_COMMENTS) {
+        return;
+    }
+
     let textToFlow = '';
     switch (settings.flowContent) {
         case 'translation': textToFlow = data.translated || data.html; break;
@@ -76,19 +82,19 @@ function flowComment(data) {
     el.style.fontWeight = 'bold';
     el.style.willChange = 'transform';
     // 初期配置を画面外にしておく
-    el.style.left = '100%'; 
-    
+    el.style.left = '100%';
+
     // 軽量化された縁取り設定 (paint-orderを使用して超軽量かつ綺麗な縁取りを実現)
     const dropShadow = '1.5px 1.5px 3px rgba(0,0,0,0.9)';
     const width = Number(settings.strokeWidth) || 0;
     const color = settings.strokeColor || '#000000';
-    
+
     if (width > 0) {
         el.style.webkitTextStroke = `${width}px ${color}`;
         el.style.textStroke = `${width}px ${color}`;
         // 縁取りを文字の「内側」ではなく「外側・裏側」に描画させる（文字が細くならない）
         el.style.paintOrder = 'stroke fill';
-        el.style.textShadow = dropShadow; 
+        el.style.textShadow = dropShadow;
     } else {
         el.style.textShadow = dropShadow;
     }
@@ -96,7 +102,7 @@ function flowComment(data) {
     if (data.specialType === 'superchat') {
         el.classList.add('flow-superchat');
         el.style.backgroundColor = data.bgColor;
-        el.style.color = settings.superchatColor; 
+        el.style.color = settings.superchatColor;
         el.innerHTML = `<span class="superchat-author">${data.authorName}</span><span class="superchat-amount">${data.purchaseAmount}</span><div class="superchat-message">${textToFlow}</div>`;
     } else if (data.specialType === 'membership') {
         el.classList.add('flow-membership');
@@ -106,22 +112,22 @@ function flowComment(data) {
         el.innerHTML = textToFlow;
         el.style.color = settings[`${data.userType}Color`] || settings.normalColor;
     }
-    
+
     // ★ DOM操作の最小化: 要素の追加・削除（レイアウトスラッシング）を1回で済ませる
     flowContainer.appendChild(el);
     let commentWidth = el.offsetWidth;
-    
+
     // 画像がまだロードされていない段階での幅を予測して補正（画像はCSSで1.2emに統一されているためシンプル化）
     const imgMatch = textToFlow.match(/<img/gi);
     const imgCount = imgMatch ? imgMatch.length : 0;
-    
+
     if (commentWidth < (imgCount * settings.fontSize)) {
         commentWidth += (imgCount * (settings.fontSize * 1.2));
     }
 
     // 空きレーンを取得
     const topPosition = findAvailableLane(commentWidth);
-    
+
     // 空きがない場合は削除して終了
     if (topPosition === null) {
         el.remove();
@@ -132,7 +138,7 @@ function flowComment(data) {
     el.style.top = `${topPosition}px`;
     el.style.left = `${flowContainer.offsetWidth}px`;
     el.style.transition = `transform ${settings.flowTime}s linear`;
-    
+
     // 透明状態を解除
     el.style.opacity = settings.opacity;
 

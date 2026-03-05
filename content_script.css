@@ -162,6 +162,37 @@ html[dark] #ylc-settings-panel {
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
+/* モバイル向けUI改善（全画面モーダルまたはボトムシート風） */
+@media (max-width: 768px) {
+    #ylc-settings-panel {
+        top: auto !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 85vh !important;
+        max-height: 85vh !important;
+        border-radius: 16px 16px 0 0;
+        resize: none;
+        box-shadow: 0 -4px 16px rgba(0,0,0,0.3);
+        /* モバイルではスクロールとの干渉を防ぐため固定 */
+        touch-action: none; 
+    }
+    
+    #ylc-settings-header {
+        padding: 16px;
+        font-size: 16px;
+        /* モバイルではドラッグ操作しないためカーソル変更 */
+        cursor: default;
+    }
+    
+    #ylc-settings-close-btn {
+        padding: 8px; /* タッチターゲット拡大 */
+        margin: -8px;
+    }
+}
+
 #ylc-settings-header {
     display: flex;
     justify-content: space-between;
