@@ -34,6 +34,14 @@ function preprocessForYouTubeChat(text) {
 
     // 3. 典型的なネットスラング・略語を標準的な英語に置換（翻訳エンジンが正しく認識できるようにする）
     const slangMap = {
+        // ─── 複合語（先に定義・順序依存）───
+        "\\bgg wp\\b":        "great game, well played",
+        "\\bgg ez\\b":        "good game easy",
+        "\\bfr fr\\b":        "for real",
+        "\\bno cap\\b":       "seriously",
+        "\\bpog champ\\b":    "great",
+
+        // ─── 既存スラング ───
         "\\blol\\b": "haha",
         "\\blmao\\b": "haha",
         "\\bwtf\\b": "what the hell",
@@ -61,7 +69,53 @@ function preprocessForYouTubeChat(text) {
         "\\bngl\\b": "not gonna lie",
         "\\bjk\\b": "just kidding",
         "\\bmb\\b": "my bad",
-        "\\bwdym\\b": "what do you mean"
+        "\\bwdym\\b": "what do you mean",
+
+        // ─── Twitchエモート・配信文化 ───
+        "\\bpoggers\\b":      "amazing",
+        "\\bpog\\b":          "amazing",
+        "\\bkekw\\b":         "haha",
+        "\\bomegalul\\b":     "haha",
+        "\\blulw\\b":         "haha",
+        "\\bmonkas\\b":       "that's scary",
+        "\\bsadge\\b":        "so sad",
+        "\\b5head\\b":        "so smart",
+        "\\bpepega\\b":       "so dumb",
+        "\\bhypers\\b":       "so exciting",
+        "\\bwidepeepo\\b":    "big smile",
+
+        // ─── ゲーミング ───
+        "\\bez\\b":           "easy",
+        "\\brip\\b":          "rest in peace",
+        "\\bnerf\\b":         "weakened",
+        "\\bbuff\\b":         "strengthened",
+        "\\bcarry\\b":        "carrying the team",
+        "\\bdiff\\b":         "skill difference",
+        "\\bchoke\\b":        "choked at the end",
+        "\\bclutch\\b":       "clutch",
+        "\\bthrow\\b":        "threw the game",
+        "\\btryhard\\b":      "trying too hard",
+
+        // ─── 最新ネットスラング ───
+        "\\bxd\\b":           "haha",
+        "\\blfg\\b":          "let's go",
+        "\\bbased\\b":        "respectable",
+        "\\bcringe\\b":       "embarrassing",
+        "\\bslay\\b":         "amazing",
+        "\\bbussin\\b":       "really good",
+        "\\bmid\\b":          "mediocre",
+        "\\bsheesh\\b":       "wow",
+        "\\bgoat\\b":         "greatest of all time",
+        "\\bcopium\\b":       "false hope",
+        "\\bsus\\b":          "suspicious",
+        "\\byikes\\b":        "that's bad",
+        "\\bnpc\\b":          "soulless",
+        "\\bbanger\\b":       "amazing",
+        "\\bhype\\b":         "exciting",
+        "\\bsmh\\b":          "shaking my head",
+        "\\bcap\\b":          "lie",
+        "\\bsalty\\b":        "bitter",
+        "\\btilted\\b":       "frustrated"
     };
 
     for (const [pattern, replacement] of Object.entries(slangMap)) {
@@ -115,8 +169,19 @@ function postprocessJapanese(translationObj) {
     text = text.replace(/ですよ/g, 'だよ');
     text = text.replace(/でしょう/g, 'だろう');
     text = text.replace(/ますか\？/g, '？');
-    text = text.replace(/ではありません/g, 'じゃない');
-    
+    text = text.replace(/ではありません/g, 'じゃない'); // ← ありません より先
+
+    // 長いフレーズから短い順で適用（競合による誤爆防止）
+    text = text.replace(/することができません/g, 'できない');
+    text = text.replace(/することができます/g, 'できる');
+    text = text.replace(/てしまいました/g, 'てしまった');
+    text = text.replace(/ということです/g, 'ってこと');
+    text = text.replace(/かもしれません/g, 'かもしれない');
+    text = text.replace(/なのです/g, 'なんだ');
+    text = text.replace(/しています/g, 'してる');
+    text = text.replace(/ています/g, 'てる');
+    text = text.replace(/ありません/g, 'ない'); // ← ではありません の後
+
     translationObj.translation = text;
     return translationObj;
 }
