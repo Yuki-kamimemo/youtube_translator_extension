@@ -138,11 +138,6 @@ async function translateWithGoogle(text) {
             : '';
         
         if (translation) {
-            if (translationCache.size >= MAX_CACHE_SIZE) {
-                const firstKey = translationCache.keys().next().value;
-                translationCache.delete(firstKey);
-            }
-            translationCache.set(text, { translation, timestamp: Date.now() });
             return { translation };
         } else {
             throw new Error("Invalid response");
@@ -184,7 +179,6 @@ async function handleTranslationRequest(text, settings) {
             const translation = data.translations?.[0]?.text?.trim();
             
             if (translation) {
-                translationCache.set(text, { translation, timestamp: Date.now() });
                 result = { translation };
             } else {
                 throw new Error();
@@ -200,8 +194,19 @@ async function handleTranslationRequest(text, settings) {
         result = await translateWithGoogle(processedText);
     }
 
-    // 3. 日本語のチャット向け後処理を適用して返す
-    return postprocessJapanese(result);
+    // 3. 日本語のチャット向け後処理を適用
+    const finalResult = postprocessJapanese(result);
+
+    // 4. キャッシュ書き込みを一元管理（元テキスト text をキーに、後処理済み翻訳を格納）
+    if (finalResult && finalResult.translation) {
+        if (translationCache.size >= MAX_CACHE_SIZE) {
+            const firstKey = translationCache.keys().next().value;
+            translationCache.delete(firstKey);
+        }
+        translationCache.set(text, { translation: finalResult.translation, timestamp: Date.now() });
+    }
+
+    return finalResult;
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
