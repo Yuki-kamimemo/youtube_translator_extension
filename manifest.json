@@ -4,7 +4,8 @@
     "version": "3.1.1",
     "description": "YouTubeライブチャットを翻訳し、画面上にコメントを流す機能を提供します。",
     "permissions": [
-        "storage"
+        "storage",
+        "alarms"
     ],
     "action": {
         "default_title": "チャット設定を開く",

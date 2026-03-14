@@ -51,6 +51,55 @@ function findAvailableLane(commentWidth) {
     return (selectedLane * laneHeight) + marginTop;
 }
 
+// YouTube絵文字画像で許可するCDNドメイン
+const ALLOWED_IMG_HOSTS = [
+    'yt3.ggpht.com',
+    'yt3.googleusercontent.com',
+    'lh3.googleusercontent.com',
+    'www.gstatic.com',
+];
+
+/**
+ * HTML文字列をDOMParserで解析し、許可タグ（text/img/span/br）のみを
+ * DocumentFragmentとして安全に再構築する（XSS対策）
+ */
+function createSafeContent(htmlString) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, 'text/html');
+    const fragment = document.createDocumentFragment();
+
+    const walk = (node, parent) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+            parent.appendChild(document.createTextNode(node.textContent));
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+            const tag = node.tagName.toLowerCase();
+            if (tag === 'img') {
+                try {
+                    const url = new URL(node.src);
+                    if (ALLOWED_IMG_HOSTS.includes(url.hostname)) {
+                        const img = document.createElement('img');
+                        img.src = node.src;
+                        if (node.alt) img.alt = node.alt;
+                        if (node.className) img.className = node.className;
+                        parent.appendChild(img);
+                    }
+                } catch (_) { /* 不正なURLは無視 */ }
+            } else if (tag === 'span' || tag === 'br') {
+                const el = document.createElement(tag);
+                if (node.className) el.className = node.className;
+                parent.appendChild(el);
+                node.childNodes.forEach(child => walk(child, el));
+            } else {
+                // 許可外タグは子ノードだけ再帰的に処理（タグ自体は無視）
+                node.childNodes.forEach(child => walk(child, parent));
+            }
+        }
+    };
+
+    doc.body.childNodes.forEach(child => walk(child, fragment));
+    return fragment;
+}
+
 /**
  * 画面にコメントを流す
  */
@@ -103,13 +152,28 @@ function flowComment(data) {
         el.classList.add('flow-superchat');
         el.style.backgroundColor = data.bgColor;
         el.style.color = settings.superchatColor;
-        el.innerHTML = `<span class="superchat-author">${data.authorName}</span><span class="superchat-amount">${data.purchaseAmount}</span><div class="superchat-message">${textToFlow}</div>`;
+
+        const authorSpan = document.createElement('span');
+        authorSpan.className = 'superchat-author';
+        authorSpan.textContent = data.authorName;
+
+        const amountSpan = document.createElement('span');
+        amountSpan.className = 'superchat-amount';
+        amountSpan.textContent = data.purchaseAmount;
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'superchat-message';
+        messageDiv.appendChild(createSafeContent(textToFlow));
+
+        el.appendChild(authorSpan);
+        el.appendChild(amountSpan);
+        el.appendChild(messageDiv);
     } else if (data.specialType === 'membership') {
         el.classList.add('flow-membership');
         el.style.color = settings.membershipColorFlow;
-        el.innerHTML = textToFlow;
+        el.appendChild(createSafeContent(textToFlow));
     } else {
-        el.innerHTML = textToFlow;
+        el.appendChild(createSafeContent(textToFlow));
         el.style.color = settings[`${data.userType}Color`] || settings.normalColor;
     }
 

@@ -8,15 +8,29 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     chrome.storage.local.remove(`tabState_${tabId}`);
 });
 
-// 定期的なクリーンアップ
-setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of translationCache.entries()) {
-        if (now - value.timestamp > CACHE_EXPIRY_MS) {
-            translationCache.delete(key);
+// Service Worker ライフサイクルに準拠したキャッシュクリーンアップ
+// (setInterval はSW停止で失われるため chrome.alarms を使用)
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create('cleanupCache', { periodInMinutes: 1 });
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'cleanupCache') {
+        const now = Date.now();
+        for (const [key, value] of translationCache.entries()) {
+            if (now - value.timestamp > CACHE_EXPIRY_MS) {
+                translationCache.delete(key);
+            }
         }
     }
-}, 60 * 1000);
+});
+
+// スラング辞書（slang_dict.json から起動時に非同期ロード）
+let slangMap = {};
+fetch(chrome.runtime.getURL('slang_dict.json'))
+    .then(res => res.json())
+    .then(data => { slangMap = data; })
+    .catch(() => {}); // ロード失敗時は空のまま処理を継続
 
 /**
  * YouTubeチャット特有のテキスト前処理 (Google翻訳の精度向上)
@@ -24,7 +38,7 @@ setInterval(() => {
 function preprocessForYouTubeChat(text) {
     if (!text) return text;
     let processed = text;
-    
+
     // 1. 絵文字とテキストが密着していると翻訳が崩れるため、前後にスペースを挿入
     processed = processed.replace(/([\p{Emoji}])([a-zA-Z0-9])/gu, '$1 $2');
     processed = processed.replace(/([a-zA-Z0-9])([\p{Emoji}])/gu, '$1 $2');
@@ -32,92 +46,7 @@ function preprocessForYouTubeChat(text) {
     // 2. 連続する文字の正規化 (例: "soooo good" -> "so good", "omgggg" -> "omg")
     processed = processed.replace(/([a-zA-Z])\1{2,}/gi, '$1$1');
 
-    // 3. 典型的なネットスラング・略語を標準的な英語に置換（翻訳エンジンが正しく認識できるようにする）
-    const slangMap = {
-        // ─── 複合語（先に定義・順序依存）───
-        "\\bgg wp\\b":        "great game, well played",
-        "\\bgg ez\\b":        "good game easy",
-        "\\bfr fr\\b":        "for real",
-        "\\bno cap\\b":       "seriously",
-        "\\bpog champ\\b":    "great",
-
-        // ─── 既存スラング ───
-        "\\blol\\b": "haha",
-        "\\blmao\\b": "haha",
-        "\\bwtf\\b": "what the hell",
-        "\\bomg\\b": "oh my god",
-        "\\bidk\\b": "i don't know",
-        "\\btbh\\b": "to be honest",
-        "\\bbtw\\b": "by the way",
-        "\\bafk\\b": "away from keyboard",
-        "\\bbrb\\b": "be right back",
-        "\\bnvm\\b": "nevermind",
-        "\\bthx\\b": "thanks",
-        "\\bty\\b": "thank you",
-        "\\bpls\\b": "please",
-        "\\bplz\\b": "please",
-        "\\bu\\b": "you",
-        "\\bur\\b": "your",
-        "\\br\\b": "are",
-        "\\bgg\\b": "good game",
-        "\\bwp\\b": "well played",
-        "\\bgl\\b": "good luck",
-        "\\bglhf\\b": "good luck have fun",
-        "\\bimo\\b": "in my opinion",
-        "\\bimho\\b": "in my humble opinion",
-        "\\bfr\\b": "for real",
-        "\\bngl\\b": "not gonna lie",
-        "\\bjk\\b": "just kidding",
-        "\\bmb\\b": "my bad",
-        "\\bwdym\\b": "what do you mean",
-
-        // ─── Twitchエモート・配信文化 ───
-        "\\bpoggers\\b":      "amazing",
-        "\\bpog\\b":          "amazing",
-        "\\bkekw\\b":         "haha",
-        "\\bomegalul\\b":     "haha",
-        "\\blulw\\b":         "haha",
-        "\\bmonkas\\b":       "that's scary",
-        "\\bsadge\\b":        "so sad",
-        "\\b5head\\b":        "so smart",
-        "\\bpepega\\b":       "so dumb",
-        "\\bhypers\\b":       "so exciting",
-        "\\bwidepeepo\\b":    "big smile",
-
-        // ─── ゲーミング ───
-        "\\bez\\b":           "easy",
-        "\\brip\\b":          "rest in peace",
-        "\\bnerf\\b":         "weakened",
-        "\\bbuff\\b":         "strengthened",
-        "\\bcarry\\b":        "carrying the team",
-        "\\bdiff\\b":         "skill difference",
-        "\\bchoke\\b":        "choked at the end",
-        "\\bclutch\\b":       "clutch",
-        "\\bthrow\\b":        "threw the game",
-        "\\btryhard\\b":      "trying too hard",
-
-        // ─── 最新ネットスラング ───
-        "\\bxd\\b":           "haha",
-        "\\blfg\\b":          "let's go",
-        "\\bbased\\b":        "respectable",
-        "\\bcringe\\b":       "embarrassing",
-        "\\bslay\\b":         "amazing",
-        "\\bbussin\\b":       "really good",
-        "\\bmid\\b":          "mediocre",
-        "\\bsheesh\\b":       "wow",
-        "\\bgoat\\b":         "greatest of all time",
-        "\\bcopium\\b":       "false hope",
-        "\\bsus\\b":          "suspicious",
-        "\\byikes\\b":        "that's bad",
-        "\\bnpc\\b":          "soulless",
-        "\\bbanger\\b":       "amazing",
-        "\\bhype\\b":         "exciting",
-        "\\bsmh\\b":          "shaking my head",
-        "\\bcap\\b":          "lie",
-        "\\bsalty\\b":        "bitter",
-        "\\btilted\\b":       "frustrated"
-    };
-
+    // 3. 典型的なネットスラング・略語を標準的な英語に置換
     for (const [pattern, replacement] of Object.entries(slangMap)) {
         processed = processed.replace(new RegExp(pattern, 'gi'), replacement);
     }
@@ -126,33 +55,41 @@ function preprocessForYouTubeChat(text) {
 }
 
 /**
- * 辞書処理の最適化
+ * 辞書処理（コンパイル済み正規表現をキャッシュして再利用）
  */
+let cachedDictionaryStr = null;
+let cachedRegexEntries = [];
+
 function preprocessWithDictionary(text, dictionaryStr) {
     if (!dictionaryStr || !text) return text;
 
-    const lines = dictionaryStr.split('\n');
-    let processedText = text;
-    
-    const entries = [];
-    for (const line of lines) {
-        const parts = line.split(',');
-        if (parts.length >= 2) {
-            const original = parts[0].trim();
-            const translated = parts.slice(1).join(',').trim();
-            if (original && translated) {
-                entries.push({ original, translated });
+    // 辞書文字列が変わった時だけ再パース・再コンパイル
+    if (cachedDictionaryStr !== dictionaryStr) {
+        cachedDictionaryStr = dictionaryStr;
+        const lines = dictionaryStr.split('\n');
+        const entries = [];
+        for (const line of lines) {
+            const parts = line.split(',');
+            if (parts.length >= 2) {
+                const original = parts[0].trim();
+                const translated = parts.slice(1).join(',').trim();
+                if (original && translated) {
+                    entries.push({ original, translated });
+                }
             }
         }
+        entries.sort((a, b) => b.original.length - a.original.length);
+        cachedRegexEntries = entries.map(({ original, translated }) => {
+            const escaped = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return { regex: new RegExp(escaped, 'gi'), translated };
+        });
     }
-    entries.sort((a, b) => b.original.length - a.original.length);
 
-    for (const { original, translated } of entries) {
-        const escaped = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(escaped, 'gi');
+    let processedText = text;
+    for (const { regex, translated } of cachedRegexEntries) {
+        regex.lastIndex = 0; // gフラグ付きRegExpは状態を持つためリセット
         processedText = processedText.replace(regex, translated);
     }
-    
     return processedText;
 }
 
