@@ -350,7 +350,8 @@ function processNewCommentNode(node) {
         !comment.text.startsWith('[') &&
         !comment.text.startsWith('<') &&
         !hasJapanese &&
-        hasForeignCharacters;
+        hasForeignCharacters &&
+        !shouldSkipTranslation(comment.text);
 
     if (shouldTranslate) {
         enqueueTranslation(comment.text, (result) => {

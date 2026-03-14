@@ -16,7 +16,7 @@ function shouldSkipTranslation(text) {
     if (/^https?:\/\/[^\s]+$/.test(trimmedText)) return true;
     if (/^[ｦ-ﾟ\d\s\p{P}\p{S}]+$/u.test(trimmedText)) return true;
     if (/^[\p{Emoji}\s]+$/u.test(trimmedText) && !/[a-zA-Z0-9]/.test(trimmedText)) return true;
-    if (/^([a-zA-Z0-9])\1{2,}$/.test(trimmedText)) return true;
+    if (/^([a-zA-Z])\1+$/.test(trimmedText)) return true;
     // 笑い表現のみのコメントをスキップ（翻訳しても「笑」しか情報がない）
     if (/^(xd|lol|lmao|kek|haha|hehe|lul|kekw|lolol)+[!?]*$/i.test(trimmedText)) return true;
     // 数字・記号・スペースのみのコメントをスキップ（例: "100", "!!!!"）
