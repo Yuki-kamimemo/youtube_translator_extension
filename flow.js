@@ -177,40 +177,43 @@ function flowComment(data) {
         el.style.color = settings[`${data.userType}Color`] || settings.normalColor;
     }
 
-    // ★ DOM操作の最小化: 要素の追加・削除（レイアウトスラッシング）を1回で済ませる
+    // READ: appendChild 前にコンテナ幅を読む（子追加では変化しないため強制レイアウト不要）
+    const containerWidth = flowContainer.offsetWidth;
+
+    // 画像カウントは文字列操作なので appendChild 前に実施
+    const imgCount = (textToFlow.match(/<img/gi) || []).length;
+
+    // WRITE: DOMに追加
     flowContainer.appendChild(el);
-    let commentWidth = el.offsetWidth;
 
-    // 画像がまだロードされていない段階での幅を予測して補正（画像はCSSで1.2emに統一されているためシンプル化）
-    const imgMatch = textToFlow.match(/<img/gi);
-    const imgCount = imgMatch ? imgMatch.length : 0;
-
-    if (commentWidth < (imgCount * settings.fontSize)) {
-        commentWidth += (imgCount * (settings.fontSize * 1.2));
-    }
-
-    // 空きレーンを取得
-    const topPosition = findAvailableLane(commentWidth);
-
-    // 空きがない場合は削除して終了
-    if (topPosition === null) {
-        el.remove();
-        return;
-    }
-
-    // 配置とアニメーションの適用
-    el.style.top = `${topPosition}px`;
-    el.style.left = `${flowContainer.offsetWidth}px`;
-    el.style.transition = `transform ${settings.flowTime}s linear`;
-
-    // 透明状態を解除
-    el.style.opacity = settings.opacity;
-
-    // 次の描画フレームでアニメーションを開始
+    // double-rAF: Read フェーズと Write フェーズを分離して強制同期レイアウドを回避
     requestAnimationFrame(() => {
-        el.style.transform = `translateX(-${flowContainer.offsetWidth + commentWidth}px)`;
-    });
+        // READ フェーズ: 前フレームのレイアウト結果を利用（強制 reflow なし）
+        let commentWidth = el.offsetWidth;
 
-    // アニメーション完了後に要素を削除
-    setTimeout(() => el.remove(), settings.flowTime * 1000 + 500);
+        if (commentWidth < (imgCount * settings.fontSize)) {
+            commentWidth += (imgCount * (settings.fontSize * 1.2));
+        }
+
+        const topPosition = findAvailableLane(commentWidth);
+
+        if (topPosition === null) {
+            el.remove();
+            return;
+        }
+
+        // WRITE フェーズ: 配置スタイルを一括適用
+        el.style.top = `${topPosition}px`;
+        el.style.left = `${containerWidth}px`;
+        el.style.transition = `transform ${settings.flowTime}s linear`;
+        el.style.opacity = settings.opacity;
+
+        // アニメーション開始は次フレームに委ねる（transition が確実に有効になってから）
+        requestAnimationFrame(() => {
+            el.style.transform = `translateX(-${containerWidth + commentWidth}px)`;
+        });
+
+        // アニメーション完了後に要素を削除
+        setTimeout(() => el.remove(), settings.flowTime * 1000 + 500);
+    });
 }
