@@ -11,8 +11,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const elements = {
         translator: document.getElementById('translator'),
-        deeplApiKey: document.getElementById('deeplApiKey'),
-        deeplKeyGroup: document.getElementById('deepl-key-group'),
+        ollamaEndpoint: document.getElementById('ollamaEndpoint'),
+        ollamaModel: document.getElementById('ollamaModel'),
+        ollamaModelActive: document.getElementById('ollamaModelActive'),
+        ollamaStatus: document.getElementById('ollamaStatus'),
+        ollamaConfigGroup: document.getElementById('ollama-config-group'),
         enableGoogleTranslateFallback: document.getElementById('enableGoogleTranslateFallback'),
         enableInlineTranslation: document.getElementById('enableInlineTranslation'),
         enableFlowComments: document.getElementById('enableFlowComments'),
@@ -45,7 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const defaults = {
-        translator: 'google', deeplApiKey: '',
+        translator: 'google',
+        ollamaEndpoint: 'http://localhost:11434',
+        ollamaModel: 'qwen3.5:2b',
+        ollamaModelActive: false,
         enableGoogleTranslateFallback: true, enableInlineTranslation: true, enableFlowComments: true,
         flowContent: 'translation', flowTime: 8, fontSize: 24, opacity: 0.9, position: 'top_priority',
         strokeWidth: 1.5, strokeColor: '#000000',
@@ -60,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         profiles: {},
     };
 
-    let currentTabId = null; // ★追加: 現在のタブIDを保持
+    let currentTabId = null;
     
     const tabs = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
@@ -90,7 +96,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const debouncedSaveSettings = debounce(() => {
-        // ★変更: オン・オフ設定は現在のタブ(local)に、それ以外は全体(sync)に保存
         const currentFormSettings = getSettingsFromForm();
         const tabStateKeys = ['enableInlineTranslation', 'enableFlowComments'];
         const tabState = {};
@@ -112,6 +117,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 300);
 
     function loadSettings(settings) {
+        if (!['google', 'ollama'].includes(settings.translator)) {
+            settings.translator = 'google';
+        }
         Object.keys(settings).filter(k => k !== 'profiles').forEach(key => {
             const element = elements[key];
             if (element) {
@@ -119,8 +127,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 else element.value = settings[key];
             }
         });
-        elements.opacityValue.textContent = settings.opacity;
-        toggleApiKeyInput(settings.translator);
+        if (elements.opacityValue && settings.opacity !== undefined) {
+            elements.opacityValue.textContent = settings.opacity;
+        }
+        toggleOllamaConfig(settings.translator);
+        updateOllamaStatusDisplay(settings.ollamaModelActive);
+    }
+
+    function toggleOllamaConfig(selected) {
+        if (elements.ollamaConfigGroup) {
+            elements.ollamaConfigGroup.style.display = (selected === 'ollama') ? 'block' : 'none';
+        }
+    }
+
+    function updateOllamaStatusDisplay(active) {
+        if (!elements.ollamaStatus) return;
+        elements.ollamaStatus.textContent = active ? '起動中' : '停止中';
+        elements.ollamaStatus.style.color = active ? '#4caf50' : '#888';
     }
 
     function populateProfiles(profiles) {
@@ -186,21 +209,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
     Object.keys(elements).filter(k => k !== 'profiles' && elements[k]).forEach(key => {
         const element = elements[key];
-        if (element.id && !element.id.includes('Group') && !element.id.includes('Value')) {
+        if (element.id && !element.id.includes('Group') && !element.id.includes('Value') && !element.id.includes('Status')) {
             element.addEventListener('input', debouncedSaveSettings);
         }
     });
     
     elements.translator.addEventListener('change', (e) => {
-        toggleApiKeyInput(e.target.value);
+        const selected = e.target.value;
+        toggleOllamaConfig(selected);
+        if (selected !== 'ollama') {
+            const endpoint = elements.ollamaEndpoint.value.trim();
+            const model = elements.ollamaModel.value.trim();
+            chrome.runtime.sendMessage({ action: 'ollamaSetActive', active: false, endpoint, model });
+            if (elements.ollamaModelActive) elements.ollamaModelActive.checked = false;
+            updateOllamaStatusDisplay(false);
+            chrome.storage.sync.set({ ollamaModelActive: false });
+        }
         debouncedSaveSettings();
     });
-    elements.opacity.addEventListener('input', (e) => { elements.opacityValue.textContent = e.target.value; });
+
+    if (elements.ollamaModelActive) {
+        elements.ollamaModelActive.addEventListener('change', async (e) => {
+            const active = e.target.checked;
+            const endpoint = elements.ollamaEndpoint.value.trim();
+            const model = elements.ollamaModel.value.trim();
+            const status = elements.ollamaStatus;
+
+            if (status) status.textContent = active ? '起動中...' : '停止中...';
+            
+            chrome.runtime.sendMessage({
+                action: 'ollamaSetActive', active, endpoint, model
+            }, (res) => {
+                if (res?.ok) {
+                    updateOllamaStatusDisplay(active);
+                } else {
+                    if (status) {
+                        status.textContent = `エラー: ${res?.error || '接続失敗'}`;
+                        status.style.color = '#f44336';
+                    }
+                    e.target.checked = false;
+                    chrome.storage.sync.set({ ollamaModelActive: false });
+                }
+            });
+            debouncedSaveSettings();
+        });
+    }
+
+    if (elements.opacity) {
+        elements.opacity.addEventListener('input', (e) => { 
+            if (elements.opacityValue) elements.opacityValue.textContent = e.target.value; 
+        });
+    }
     
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'sync' && area !== 'local') return;
 
-        // ★変更: タブ固有設定(local)と全体設定(sync)の両方の変更をUIに反映
         if (area === 'local' && currentTabId && changes[`tabState_${currentTabId}`]) {
             const newTabState = changes[`tabState_${currentTabId}`].newValue || {};
             if (elements.enableInlineTranslation && newTabState.enableInlineTranslation !== undefined) {
@@ -218,15 +281,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (element) {
                     if (element.type === 'checkbox') {
                         element.checked = newValue;
+                        if (key === 'ollamaModelActive') updateOllamaStatusDisplay(newValue);
                     } else if (key !== 'profiles') { 
                         element.value = newValue;
+                        if (key === 'translator') toggleOllamaConfig(newValue);
                     }
                 }
             }
         }
     });
 
-    // ★変更: 初期ロード時にタブIDを取得し、タブ固有設定をマージして読み込む
     chrome.runtime.sendMessage({ action: 'getTabId' }, (response) => {
         currentTabId = response?.tabId || null;
         
@@ -244,8 +308,4 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
-
-    function toggleApiKeyInput(selected) {
-        elements.deeplKeyGroup.style.display = (selected === 'deepl') ? 'block' : 'none';
-    }
 });

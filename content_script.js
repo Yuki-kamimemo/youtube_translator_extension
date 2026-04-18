@@ -15,7 +15,8 @@ let hiddenChatIframe = null;
 let currentTabId = null;
 
 const DEFAULTS = {
-    translator: 'gemini', geminiApiKey: '', geminiApiKey2: '', deeplApiKey: '', enableInlineTranslation: true,
+    translator: 'google', ollamaEndpoint: 'http://localhost:11434', ollamaModel: 'qwen3.5:2b', 
+    ollamaModelActive: false, enableInlineTranslation: true,
     enableGoogleTranslateFallback: true, enableFlowComments: true, flowContent: 'translation',
     flowTime: 8, fontSize: 24, opacity: 0.9, position: 'top_priority',
     strokeWidth: 1.5, strokeColor: '#000000',

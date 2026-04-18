@@ -39,7 +39,7 @@
         "*://www.youtube.com/*",
         "*://m.youtube.com/*",
         "https://*.googleapis.com/*",
-        "https://api-free.deepl.com/*",
+        "http://localhost:11434/*",
         "https://translate.googleapis.com/*"
     ],
     "icons": {

@@ -244,17 +244,29 @@
             <label for="translator">翻訳サービス</label>
             <select id="translator">
                 <option value="google">Google翻訳 (APIキー不要)</option>
-                <option value="deepl">DeepL</option>
+                <option value="ollama">Ollama (ローカルLLM)</option>
             </select>
-            
-            <div id="deepl-key-group" class="api-key-group">
-                <label for="deeplApiKey">DeepL APIキー</label>
-                <input type="password" id="deeplApiKey" placeholder="DeepL APIキー (Free or Pro)">
+
+            <div id="ollama-config-group" class="api-key-group" style="display:none;">
+                <label for="ollamaEndpoint">Ollama エンドポイント</label>
+                <input type="text" id="ollamaEndpoint" placeholder="http://localhost:11434">
+
+                <label for="ollamaModel">モデル名</label>
+                <input type="text" id="ollamaModel" placeholder="qwen3.5:2b">
+
+                <label class="toggle-wrapper">
+                    <span class="toggle-label">Ollamaモデルを起動</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="ollamaModelActive">
+                        <span class="slider"></span>
+                    </label>
+                </label>
+                <div id="ollamaStatus" class="status-text" style="font-size:11px; margin-top:4px; color:#888;">停止中</div>
             </div>
         </div>
 
         <label class="toggle-wrapper">
-            <span class="toggle-label">DeepLエラー時にGoogle翻訳を利用</span>
+            <span class="toggle-label">翻訳エラー時にGoogle翻訳を利用</span>
             <label class="toggle-switch">
                 <input type="checkbox" id="enableGoogleTranslateFallback">
                 <span class="slider"></span>
