@@ -129,7 +129,7 @@ Provide ONLY the translated text. No explanations or notes.`;
         model,
         messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: `/no_think\n${text}` }
+            { role: 'user', content: text }
         ],
         stream: false,
         think: false,
