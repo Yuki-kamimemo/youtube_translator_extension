@@ -122,7 +122,7 @@ async function translateWithGoogle(text) {
 async function translateWithOllama(text, settings) {
     const endpoint = (settings.ollamaEndpoint || 'http://localhost:11434').replace(/\/$/, '');
     const model = settings.ollamaModel || 'qwen3.5:2b';
-    const systemPrompt = 'あなたはYouTubeライブ配信のチャット翻訳者です。入力テキストを日本語に翻訳してください。口調はライブ配信のチャット欄らしく、タメ口・短文・感嘆詞（w、笑、！、草）を自然に使ってください。翻訳結果のみを出力し、説明・前置き・引用符は不要です。';
+    const systemPrompt = 'YouTube chat translator. EN to casual JP. Ignore typos. Output ONLY translation.\nEx:\n"lol/lmao" -> "草"\n"nice/good" -> "いいじゃん"\n"cool/kakkuii" -> "かっこいい"\n"What?" -> "え、何？"\n"Thank you" -> "助かる"\n"Look like..." -> "...っぽい"';
     const body = {
         model,
         messages: [
