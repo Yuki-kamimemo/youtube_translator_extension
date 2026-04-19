@@ -54,7 +54,8 @@
                 "popup.js"
             ],
             "matches": [
-                "*://www.youtube.com/*"
+                "*://www.youtube.com/*",
+                "*://m.youtube.com/*"
             ]
         }
     ]

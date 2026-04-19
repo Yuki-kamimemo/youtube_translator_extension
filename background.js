@@ -6,7 +6,7 @@ const MAX_CACHE_SIZE = 2000;
 const SETTINGS_DEFAULTS = {
     translator: 'google',
     ollamaEndpoint: 'http://localhost:11434',
-    ollamaModel: 'qwen3.5:2b',
+    ollamaModel: 'youtube-translator:latest',
     ollamaModelActive: false,
     enableGoogleTranslateFallback: true,
     dictionary: ''
@@ -121,8 +121,10 @@ async function translateWithGoogle(text) {
 
 async function translateWithOllama(text, settings) {
     const endpoint = (settings.ollamaEndpoint || 'http://localhost:11434').replace(/\/$/, '');
-    const model = settings.ollamaModel || 'qwen3.5:2b';
-    const systemPrompt = 'YouTube chat translator. EN to casual JP. Ignore typos. Output ONLY translation.\nEx:\n"lol/lmao" -> "草"\n"nice/good" -> "いいじゃん"\n"cool/kakkuii" -> "かっこいい"\n"What?" -> "え、何？"\n"Thank you" -> "助かる"\n"Look like..." -> "...っぽい"';
+    const model = settings.ollamaModel || 'youtube-translator:latest';
+    const systemPrompt = `You are a specialist AI for translating YouTube live chat messages.
+Translate English chat (including internet slang and gaming terms) into natural, casual Japanese (tame-guchi).
+Provide ONLY the translated text. No explanations or notes.`;
     const body = {
         model,
         messages: [
@@ -207,7 +209,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'ollamaSetActive') {
             const { active, endpoint, model } = request;
             const ep = (endpoint || 'http://localhost:11434').replace(/\/$/, '');
-            const m = model || 'qwen3.5:2b';
+            const m = model || 'youtube-translator:latest';
             try {
                 const response = await fetch(`${ep}/api/generate`, {
                     method: 'POST',
@@ -242,16 +244,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
             const task = handleTranslationRequest(text, settings);
             pendingTranslations.set(cacheKey, task);
-            const result = await task;
-            pendingTranslations.delete(cacheKey);
-            sendResponse(result);
+            try {
+                const result = await task;
+                sendResponse(result);
+            } finally {
+                pendingTranslations.delete(cacheKey);
+            }
         }
     })();
     return true; 
 });
 
 chrome.action.onClicked.addListener((tab) => {
-  if (tab.url && tab.url.includes("youtube.com/live_chat")) { 
+  if (tab.url && tab.url.includes("youtube.com/watch")) {
     chrome.tabs.sendMessage(tab.id, { action: "toggleSettingsPanel" });
   }
 });

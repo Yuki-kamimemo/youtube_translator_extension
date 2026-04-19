@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const defaults = {
         translator: 'google',
         ollamaEndpoint: 'http://localhost:11434',
-        ollamaModel: 'qwen3.5:2b',
+        ollamaModel: 'youtube-translator:latest',
         ollamaModelActive: false,
         enableGoogleTranslateFallback: true, enableInlineTranslation: true, enableFlowComments: true,
         flowContent: 'translation', flowTime: 8, fontSize: 24, opacity: 0.9, position: 'top_priority',
