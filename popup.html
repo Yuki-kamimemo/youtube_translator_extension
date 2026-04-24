@@ -252,7 +252,13 @@
                 <input type="text" id="ollamaEndpoint" placeholder="http://localhost:11434">
 
                 <label for="ollamaModel">モデル名</label>
-                <input type="text" id="ollamaModel" placeholder="youtube-translator:latest">
+                <div class="profile-actions">
+                    <select id="ollamaModel">
+                        <option value="youtube-translator:latest">youtube-translator:latest</option>
+                    </select>
+                    <button id="refreshOllamaModelsBtn" class="btn btn-secondary" type="button">更新</button>
+                </div>
+                <div id="ollamaModelsStatus" class="status-text" style="font-size:11px; margin-top:4px; color:#888;"></div>
 
                 <label class="toggle-wrapper">
                     <span class="toggle-label">Ollamaモデルを起動</span>

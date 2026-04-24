@@ -206,6 +206,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (sender.tab?.id) chrome.tabs.sendMessage(sender.tab.id, request);
             return;
         }
+        if (request.action === 'ollamaListModels') {
+            const ep = (request.endpoint || 'http://localhost:11434').replace(/\/$/, '');
+            try {
+                const response = await fetch(`${ep}/api/tags`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const models = Array.isArray(data.models)
+                    ? data.models.map(model => model.name).filter(Boolean)
+                    : [];
+                sendResponse({ ok: true, models });
+            } catch (e) {
+                sendResponse({ ok: false, error: String(e.message || e) });
+            }
+            return;
+        }
         if (request.action === 'ollamaSetActive') {
             const { active, endpoint, model } = request;
             const ep = (endpoint || 'http://localhost:11434').replace(/\/$/, '');

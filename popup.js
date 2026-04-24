@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
         translator: document.getElementById('translator'),
         ollamaEndpoint: document.getElementById('ollamaEndpoint'),
         ollamaModel: document.getElementById('ollamaModel'),
+        refreshOllamaModelsBtn: document.getElementById('refreshOllamaModelsBtn'),
+        ollamaModelsStatus: document.getElementById('ollamaModelsStatus'),
         ollamaModelActive: document.getElementById('ollamaModelActive'),
         ollamaStatus: document.getElementById('ollamaStatus'),
         ollamaConfigGroup: document.getElementById('ollama-config-group'),
@@ -67,6 +69,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     let currentTabId = null;
+    let latestOllamaModelRequestId = 0;
+    let cachedOllamaModels = [];
     
     const tabs = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
@@ -123,7 +127,8 @@ document.addEventListener('DOMContentLoaded', () => {
         Object.keys(settings).filter(k => k !== 'profiles').forEach(key => {
             const element = elements[key];
             if (element) {
-                if (element.type === 'checkbox') element.checked = settings[key];
+                if (key === 'ollamaModel') setOllamaModelOptions([], settings[key], '');
+                else if (element.type === 'checkbox') element.checked = settings[key];
                 else element.value = settings[key];
             }
         });
@@ -132,6 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         toggleOllamaConfig(settings.translator);
         updateOllamaStatusDisplay(settings.ollamaModelActive);
+        if (settings.translator === 'ollama') refreshOllamaModels(settings.ollamaModel);
     }
 
     function toggleOllamaConfig(selected) {
@@ -144,6 +150,77 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!elements.ollamaStatus) return;
         elements.ollamaStatus.textContent = active ? '起動中' : '停止中';
         elements.ollamaStatus.style.color = active ? '#4caf50' : '#888';
+    }
+
+    function setOllamaModelsStatus(message, color = '#888') {
+        if (!elements.ollamaModelsStatus) return;
+        elements.ollamaModelsStatus.textContent = message;
+        elements.ollamaModelsStatus.style.color = color;
+    }
+
+    function setOllamaModelOptions(models, selectedModel, statusMessage) {
+        if (!elements.ollamaModel) return;
+        const currentValue = selectedModel || elements.ollamaModel.value || defaults.ollamaModel;
+        const uniqueModels = [...new Set((models || []).filter(Boolean))];
+
+        elements.ollamaModel.innerHTML = '';
+        if (currentValue && !uniqueModels.includes(currentValue)) {
+            const savedOption = document.createElement('option');
+            savedOption.value = currentValue;
+            savedOption.textContent = `保存済み: ${currentValue}`;
+            elements.ollamaModel.appendChild(savedOption);
+        }
+
+        uniqueModels.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model;
+            elements.ollamaModel.appendChild(option);
+        });
+
+        if (!elements.ollamaModel.options.length) {
+            const fallbackOption = document.createElement('option');
+            fallbackOption.value = defaults.ollamaModel;
+            fallbackOption.textContent = defaults.ollamaModel;
+            elements.ollamaModel.appendChild(fallbackOption);
+        }
+
+        elements.ollamaModel.value = currentValue;
+        if (!elements.ollamaModel.value) elements.ollamaModel.value = elements.ollamaModel.options[0].value;
+        setOllamaModelsStatus(statusMessage || '');
+    }
+
+    function refreshOllamaModels(selectedModel) {
+        if (!elements.ollamaEndpoint || !elements.ollamaModel) return;
+        const requestId = ++latestOllamaModelRequestId;
+        const endpoint = elements.ollamaEndpoint.value.trim();
+        const currentValue = selectedModel || elements.ollamaModel.value || defaults.ollamaModel;
+
+        setOllamaModelsStatus('モデル一覧を取得中...');
+        if (elements.refreshOllamaModelsBtn) elements.refreshOllamaModelsBtn.disabled = true;
+
+        chrome.runtime.sendMessage({ action: 'ollamaListModels', endpoint }, (res) => {
+            if (requestId !== latestOllamaModelRequestId) return;
+            if (elements.refreshOllamaModelsBtn) elements.refreshOllamaModelsBtn.disabled = false;
+
+            if (chrome.runtime.lastError) {
+                cachedOllamaModels = [];
+                setOllamaModelOptions([], currentValue, `エラー: ${chrome.runtime.lastError.message}`);
+                setOllamaModelsStatus(`エラー: ${chrome.runtime.lastError.message}`, '#f44336');
+                return;
+            }
+
+            if (res?.ok) {
+                const models = res.models || [];
+                cachedOllamaModels = models;
+                const message = models.length ? `${models.length}件のモデルを取得` : '登録済みモデルがありません';
+                setOllamaModelOptions(models, currentValue, message);
+            } else {
+                cachedOllamaModels = [];
+                setOllamaModelOptions([], currentValue, `エラー: ${res?.error || '接続失敗'}`);
+                setOllamaModelsStatus(`エラー: ${res?.error || '接続失敗'}`, '#f44336');
+            }
+        });
     }
 
     function populateProfiles(profiles) {
@@ -213,6 +290,17 @@ document.addEventListener('DOMContentLoaded', () => {
             element.addEventListener('input', debouncedSaveSettings);
         }
     });
+
+    const debouncedRefreshOllamaModels = debounce(() => refreshOllamaModels(), 500);
+    if (elements.refreshOllamaModelsBtn) {
+        elements.refreshOllamaModelsBtn.addEventListener('click', () => refreshOllamaModels());
+    }
+    if (elements.ollamaEndpoint) {
+        elements.ollamaEndpoint.addEventListener('input', debouncedRefreshOllamaModels);
+    }
+    if (elements.ollamaModel) {
+        elements.ollamaModel.addEventListener('change', debouncedSaveSettings);
+    }
     
     elements.translator.addEventListener('change', (e) => {
         const selected = e.target.value;
@@ -224,6 +312,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (elements.ollamaModelActive) elements.ollamaModelActive.checked = false;
             updateOllamaStatusDisplay(false);
             chrome.storage.sync.set({ ollamaModelActive: false });
+        } else {
+            refreshOllamaModels();
         }
         debouncedSaveSettings();
     });
@@ -283,8 +373,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         element.checked = newValue;
                         if (key === 'ollamaModelActive') updateOllamaStatusDisplay(newValue);
                     } else if (key !== 'profiles') { 
-                        element.value = newValue;
-                        if (key === 'translator') toggleOllamaConfig(newValue);
+                        if (key === 'ollamaModel') {
+                            setOllamaModelOptions(cachedOllamaModels, newValue, elements.ollamaModelsStatus?.textContent || '');
+                        } else {
+                            element.value = newValue;
+                        }
+                        if (key === 'translator') {
+                            toggleOllamaConfig(newValue);
+                            if (newValue === 'ollama') refreshOllamaModels();
+                        }
                     }
                 }
             }
