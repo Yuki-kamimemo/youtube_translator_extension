@@ -140,26 +140,43 @@
     display: none;
     flex-direction: column;
     position: fixed;
-    top: 50px;
-    right: 50px;
+    top: 48px;
+    right: 48px;
     transform: none;
-    width: 460px;
+    width: min(560px, 92vw);
+    min-width: 340px;
     max-width: 90vw; 
-    height: 650px;
-    max-height: calc(100vh - 100px);
-    background-color: var(--yt-spec-menu-background, #ffffff);
-    border: 1px solid var(--yt-spec-10-percent-layer, #cccccc);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    height: min(720px, calc(100vh - 96px));
+    min-height: 420px;
+    max-height: calc(100vh - 96px);
+    background-color: #101114;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.45);
     z-index: 9999;
     overflow: hidden;
     resize: both;
+    min-block-size: 420px;
+    color: #f4f7f8;
 }
 
 html[dark] #ylc-settings-panel {
-    background-color: var(--yt-spec-menu-background, #212121);
-    border-color: var(--yt-spec-10-percent-layer, #444444);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    background-color: #101114;
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.55);
+}
+
+#ylc-settings-panel::after {
+    content: "";
+    position: absolute;
+    right: 7px;
+    bottom: 7px;
+    width: 14px;
+    height: 14px;
+    pointer-events: none;
+    background:
+        linear-gradient(135deg, transparent 0 48%, rgba(244, 247, 248, 0.28) 49% 55%, transparent 56%),
+        linear-gradient(135deg, transparent 0 68%, rgba(244, 247, 248, 0.18) 69% 75%, transparent 76%);
 }
 
 /* モバイル向けUI改善（全画面モーダルまたはボトムシート風） */
@@ -171,11 +188,13 @@ html[dark] #ylc-settings-panel {
         right: 0 !important;
         width: 100% !important;
         max-width: 100% !important;
+        min-width: 0 !important;
         height: 85vh !important;
+        min-height: 360px !important;
         max-height: 85vh !important;
-        border-radius: 16px 16px 0 0;
+        border-radius: 14px 14px 0 0;
         resize: none;
-        box-shadow: 0 -4px 16px rgba(0,0,0,0.3);
+        box-shadow: 0 -12px 36px rgba(0,0,0,0.45);
         /* モバイルではスクロールとの干渉を防ぐため固定 */
         touch-action: none; 
     }
@@ -194,40 +213,60 @@ html[dark] #ylc-settings-panel {
 }
 
 #ylc-settings-header {
+    flex: 0 0 auto;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 15px;
-    background-color: var(--yt-spec-brand-background-solid, #f8f8f8);
-    border-bottom: 1px solid var(--yt-spec-10-percent-layer, #e0e0e0);
+    min-height: 48px;
+    padding: 12px 16px;
+    background-color: #181b20;
+    border-bottom: 1px solid #303743;
     font-weight: bold;
+    font-size: 14px;
+    letter-spacing: 0;
     cursor: move;
     user-select: none;
-    color: var(--yt-spec-text-primary, #0f0f0f);
+    color: #f4f7f8;
 }
 
 html[dark] #ylc-settings-header {
-    background-color: var(--yt-spec-brand-background-solid, #282828);
-    border-bottom-color: var(--yt-spec-10-percent-layer, #444444);
-    color: var(--yt-spec-text-primary, #f1f1f1);
+    background-color: #181b20;
+    border-bottom-color: #303743;
+    color: #f4f7f8;
 }
 
 #ylc-settings-close-btn {
-    background: none;
-    border: none;
-    font-size: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    background: #20252c;
+    border: 1px solid #303743;
+    border-radius: 50%;
+    font-size: 18px;
+    line-height: 1;
     cursor: pointer;
-    color: var(--yt-spec-text-secondary, #606060);
+    color: #a8b0ba;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+#ylc-settings-close-btn:hover {
+    background-color: #2a3038;
+    color: #f4f7f8;
 }
 
 html[dark] #ylc-settings-close-btn {
-    color: var(--yt-spec-text-secondary, #aaaaaa);
+    color: #a8b0ba;
 }
 
 #ylc-settings-iframe {
-    flex-grow: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
     border: none;
     width: 100%;
+    background-color: #101114;
 }
 
 /* --- フローコメント内の画像（絵文字・スタンプ等）のサイズ調整 --- */

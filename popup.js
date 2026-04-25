@@ -11,9 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const elements = {
         translator: document.getElementById('translator'),
-        lmstudioEndpoint: document.getElementById('lmstudioEndpoint'),
         lmstudioModel: document.getElementById('lmstudioModel'),
-        lmstudioApiToken: document.getElementById('lmstudioApiToken'),
         refreshLmstudioModelsBtn: document.getElementById('refreshLmstudioModelsBtn'),
         lmstudioModelsStatus: document.getElementById('lmstudioModelsStatus'),
         lmstudioModelActive: document.getElementById('lmstudioModelActive'),
@@ -52,9 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const defaults = {
         translator: 'google',
-        lmstudioEndpoint: 'http://localhost:1234',
         lmstudioModel: '',
-        lmstudioApiToken: '',
         lmstudioModelActive: false,
         ollamaEndpoint: 'http://localhost:11434',
         ollamaModel: 'youtube-translator:latest',
@@ -89,23 +85,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function normalizeSettings(settings) {
-        const normalized = { ...settings };
+        const normalized = { ...defaults, ...settings };
         if (normalized.translator === 'ollama') normalized.translator = 'lmstudio';
-        if (!normalized.lmstudioEndpoint && normalized.ollamaEndpoint) normalized.lmstudioEndpoint = normalized.ollamaEndpoint;
         if (!normalized.lmstudioModel && normalized.ollamaModel) normalized.lmstudioModel = normalized.ollamaModel;
         if (normalized.lmstudioModelActive === undefined && normalized.ollamaModelActive !== undefined) {
             normalized.lmstudioModelActive = normalized.ollamaModelActive;
         }
-        normalized.lmstudioEndpoint = normalized.lmstudioEndpoint || defaults.lmstudioEndpoint;
         normalized.lmstudioModel = normalized.lmstudioModel || defaults.lmstudioModel;
-        normalized.lmstudioApiToken = normalized.lmstudioApiToken || '';
         normalized.lmstudioModelActive = normalized.lmstudioModelActive === true;
         return normalized;
     }
 
     function getSettingsFromForm() {
         const settings = {};
-        Object.keys(defaults).filter(k => k !== 'profiles' && !key.startsWith('ollama')).forEach(key => {
+        Object.keys(defaults).filter(key => key !== 'profiles' && !key.startsWith('ollama')).forEach(key => {
             const element = elements[key];
             if (element) {
                 switch (element.type) {
@@ -119,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return settings;
     }
 
-    const debouncedSaveSettings = debounce(() => {
+    function saveSettingsNow() {
         const currentFormSettings = getSettingsFromForm();
         const tabStateKeys = ['enableInlineTranslation', 'enableFlowComments'];
         const tabState = {};
@@ -138,14 +131,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentTabId) {
             chrome.storage.local.set({ [`tabState_${currentTabId}`]: tabState });
         }
-    }, 300);
+    }
+
+    const debouncedSaveSettings = debounce(saveSettingsNow, 300);
 
     function loadSettings(settings) {
         settings = normalizeSettings(settings);
         if (!['google', 'lmstudio'].includes(settings.translator)) {
             settings.translator = 'google';
         }
-        Object.keys(settings).filter(k => k !== 'profiles' && !key.startsWith('ollama')).forEach(key => {
+        Object.keys(settings).filter(key => key !== 'profiles' && !key.startsWith('ollama')).forEach(key => {
             const element = elements[key];
             if (element) {
                 if (key === 'lmstudioModel') setLmstudioModelOptions([], settings[key], '');
@@ -214,16 +209,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function refreshLmstudioModels(selectedModel) {
-        if (!elements.lmstudioEndpoint || !elements.lmstudioModel) return;
+        if (!elements.lmstudioModel) return;
         const requestId = ++latestLmstudioModelRequestId;
-        const endpoint = elements.lmstudioEndpoint.value.trim();
-        const apiToken = elements.lmstudioApiToken?.value.trim() || '';
         const currentValue = selectedModel || elements.lmstudioModel.value || defaults.lmstudioModel;
 
         setLmstudioModelsStatus('モデル一覧を取得中...');
         if (elements.refreshLmstudioModelsBtn) elements.refreshLmstudioModelsBtn.disabled = true;
 
-        chrome.runtime.sendMessage({ action: 'lmstudioListModels', endpoint, apiToken }, (res) => {
+        chrome.runtime.sendMessage({ action: 'lmstudioListModels' }, (res) => {
             if (requestId !== latestLmstudioModelRequestId) return;
             if (elements.refreshLmstudioModelsBtn) elements.refreshLmstudioModelsBtn.disabled = false;
 
@@ -282,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.sync.get('profiles', (data) => {
             if (data.profiles && data.profiles[name]) {
                 loadSettings(data.profiles[name]);
-                debouncedSaveSettings();
+                saveSettingsNow();
                 alert(`「${name}」を読み込みました。`);
             }
         });
@@ -313,18 +306,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const element = elements[key];
         if (element.id && !element.id.includes('Group') && !element.id.includes('Value') && !element.id.includes('Status')) {
             element.addEventListener('input', debouncedSaveSettings);
+            element.addEventListener('change', debouncedSaveSettings);
         }
     });
 
     const debouncedRefreshLmstudioModels = debounce(() => refreshLmstudioModels(), 500);
     if (elements.refreshLmstudioModelsBtn) {
         elements.refreshLmstudioModelsBtn.addEventListener('click', () => refreshLmstudioModels());
-    }
-    if (elements.lmstudioEndpoint) {
-        elements.lmstudioEndpoint.addEventListener('input', debouncedRefreshLmstudioModels);
-    }
-    if (elements.lmstudioApiToken) {
-        elements.lmstudioApiToken.addEventListener('input', debouncedRefreshLmstudioModels);
     }
     if (elements.lmstudioModel) {
         elements.lmstudioModel.addEventListener('change', debouncedSaveSettings);
@@ -334,10 +322,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const selected = e.target.value;
         toggleLmstudioConfig(selected);
         if (selected !== 'lmstudio') {
-            const endpoint = elements.lmstudioEndpoint.value.trim();
             const model = elements.lmstudioModel.value.trim();
-            const apiToken = elements.lmstudioApiToken?.value.trim() || '';
-            chrome.runtime.sendMessage({ action: 'lmstudioSetActive', active: false, endpoint, model, apiToken });
+            chrome.runtime.sendMessage({ action: 'lmstudioSetActive', active: false, model });
             if (elements.lmstudioModelActive) elements.lmstudioModelActive.checked = false;
             updateLmstudioStatusDisplay(false);
             chrome.storage.sync.set({ lmstudioModelActive: false });
@@ -350,15 +336,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.lmstudioModelActive) {
         elements.lmstudioModelActive.addEventListener('change', async (e) => {
             const active = e.target.checked;
-            const endpoint = elements.lmstudioEndpoint.value.trim();
             const model = elements.lmstudioModel.value.trim();
-            const apiToken = elements.lmstudioApiToken?.value.trim() || '';
             const status = elements.lmstudioStatus;
 
             if (status) status.textContent = active ? '起動中...' : '停止中...';
             
             chrome.runtime.sendMessage({
-                action: 'lmstudioSetActive', active, endpoint, model, apiToken
+                action: 'lmstudioSetActive', active, model
             }, (res) => {
                 if (res?.ok) {
                     updateLmstudioStatusDisplay(active);

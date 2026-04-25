@@ -6,66 +6,88 @@
     <title>YouTube Live Chat Enhancer 設定</title>
 <style>
     :root {
-        --bg-color: #1a1a1b;
-        --panel-bg: #272729;
-        --text-main: #e8e8e8;
-        --text-muted: #a0a0a0;
-        --accent: #3ea6ff;
-        --accent-hover: #65b8ff;
-        --danger: #ff4e4e;
-        --border: #444;
+        --bg-color: #101114;
+        --panel-bg: #181b20;
+        --surface: #20252c;
+        --surface-soft: #15181d;
+        --text-main: #f4f7f8;
+        --text-muted: #a8b0ba;
+        --accent: #4cc9c7;
+        --accent-hover: #73ddda;
+        --danger: #ff6b6b;
+        --border: #303743;
+        --focus-ring: rgba(76, 201, 199, 0.25);
         --radius: 8px;
         --transition: 0.2s ease-in-out;
     }
+    * { box-sizing: border-box; }
+    html {
+        min-height: 100%;
+        background-color: var(--bg-color);
+    }
     body {
         width: 100%;
-        max-width: 420px;
-        box-sizing: border-box;
+        min-width: 320px;
+        min-height: 100vh;
         margin: 0;
         padding: 0;
         font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         background-color: var(--bg-color);
         color: var(--text-main);
+        overflow-x: hidden;
     }
     .header {
-        background-color: var(--panel-bg);
-        padding: 16px;
-        text-align: center;
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background-color: rgba(16, 17, 20, 0.96);
+        padding: 18px 20px 14px;
         border-bottom: 1px solid var(--border);
         font-weight: bold;
-        font-size: 16px;
-        letter-spacing: 0.5px;
+        font-size: 17px;
+        letter-spacing: 0;
+        backdrop-filter: blur(12px);
     }
     .tab-nav {
+        position: sticky;
+        top: 50px;
+        z-index: 4;
         display: flex;
-        background-color: var(--panel-bg);
+        gap: 6px;
+        padding: 10px 12px;
+        background-color: rgba(16, 17, 20, 0.96);
         border-bottom: 1px solid var(--border);
         overflow-x: auto;
+        scrollbar-width: thin;
     }
     .tab-btn {
         flex: 1;
-        padding: 14px 10px;
+        min-width: max-content;
+        padding: 10px 12px;
         cursor: pointer;
-        background: none;
-        border: none;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 999px;
         color: var(--text-muted);
         font-weight: 600;
-        font-size: 14px; /* モバイルで見やすいように少し拡大 */
+        font-size: 13px;
         white-space: nowrap;
-        border-bottom: 3px solid transparent;
         transition: var(--transition);
-        min-height: 48px; /* タッチターゲット最適化 */
+        min-height: 38px;
     }
     .tab-btn:hover {
         color: var(--text-main);
+        background-color: var(--surface-soft);
+        border-color: var(--border);
     }
     .tab-btn.active {
-        color: var(--accent);
-        border-bottom-color: var(--accent);
+        color: #061314;
+        background-color: var(--accent);
+        border-color: var(--accent);
     }
     .tab-content {
         display: none;
-        padding: 20px;
+        padding: 20px clamp(16px, 4vw, 28px) 28px;
     }
     .tab-content.active {
         display: block;
@@ -76,34 +98,57 @@
         to { opacity: 1; transform: translateY(0); }
     }
     h4 {
-        margin: 0 0 16px 0;
-        padding-bottom: 8px;
-        font-size: 15px;
+        margin: 28px 0 14px 0;
+        padding-top: 18px;
+        border-top: 1px solid var(--border);
+        font-size: 14px;
         color: var(--accent);
-        border-bottom: 1px solid var(--border);
+        letter-spacing: 0;
     }
-    .form-group { margin-bottom: 20px; }
-    .form-row { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 20px; }
-    .col { flex: 1; }
+    h4:first-child {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: 0;
+    }
+    .form-group { margin-bottom: 18px; }
+    .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: end; margin-bottom: 18px; }
+    .col { min-width: 0; }
     label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
     
     input[type="text"], input[type="password"], input[type="number"], select, textarea {
         width: 100%;
-        box-sizing: border-box;
-        padding: 12px 14px; /* タッチしやすいようにパディング拡大 */
+        padding: 11px 12px;
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        background-color: var(--panel-bg);
+        background-color: var(--surface);
         color: var(--text-main);
         font-family: inherit;
-        font-size: 16px; /* モバイルでズームされないサイズ */
+        font-size: 15px;
         transition: var(--transition);
-        min-height: 44px; /* タッチターゲット最適化 */
+        min-height: 42px;
     }
     input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
         outline: none;
         border-color: var(--accent);
-        box-shadow: 0 0 0 2px rgba(62, 166, 255, 0.2);
+        box-shadow: 0 0 0 3px var(--focus-ring);
+    }
+    select {
+        cursor: pointer;
+        padding-right: 34px;
+        appearance: none;
+        background-image:
+            linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+            linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+        background-position:
+            calc(100% - 18px) 50%,
+            calc(100% - 12px) 50%;
+        background-size: 6px 6px, 6px 6px;
+        background-repeat: no-repeat;
+    }
+    textarea {
+        min-height: 160px;
+        resize: vertical;
+        line-height: 1.55;
     }
     
     input[type="color"] {
@@ -112,7 +157,7 @@
         padding: 2px;
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        background-color: var(--panel-bg);
+        background-color: var(--surface);
         cursor: pointer;
     }
     
@@ -121,7 +166,8 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 12px 0; /* タッチターゲット拡大 */
+        gap: 14px;
+        padding: 12px 0;
         cursor: pointer;
         min-height: 44px;
     }
@@ -136,6 +182,7 @@
         display: inline-block;
         width: 44px;
         height: 24px;
+        flex: 0 0 auto;
     }
     .toggle-switch input {
         opacity: 0;
@@ -147,7 +194,7 @@
         cursor: pointer;
         top: 0; left: 0; right: 0; bottom: 0;
         background-color: #555;
-        transition: .4s;
+        transition: .22s ease;
         border-radius: 24px;
     }
     .slider:before {
@@ -158,7 +205,7 @@
         left: 3px;
         bottom: 3px;
         background-color: white;
-        transition: .4s;
+        transition: .22s ease;
         border-radius: 50%;
     }
     input:checked + .slider {
@@ -175,7 +222,7 @@
         width: 100%;
         height: 6px;
         border-radius: 3px;
-        background: #555;
+        background: var(--surface);
         outline: none;
         padding: 0;
         border: none;
@@ -194,34 +241,61 @@
         transform: scale(1.2);
     }
 
-    .api-key-group { display: none; margin-top: 12px; }
+    .api-key-group {
+        display: none;
+        margin-top: 14px;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background-color: var(--surface-soft);
+    }
     .badge { font-weight: bold; color: var(--accent); }
     .note { font-size: 12px; color: var(--text-muted); font-weight: normal; display: block; margin-top: 4px; }
     
     .profile-actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 10px; }
+    .profile-actions > * { min-width: 0; }
+    .section-spacer { margin-top: 24px; }
+    .tight-bottom { margin-bottom: 8px; }
+    .small-top { margin-top: 12px; }
+    .color-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+    }
+    .profile-footer { margin-top: 16px; text-align: right; }
+    .full-width { width: 100%; }
+    .status-text {
+        min-height: 18px;
+        color: var(--text-muted);
+        font-size: 12px !important;
+        line-height: 1.45;
+    }
     .btn {
-        padding: 12px 16px; /* タッチターゲット拡大 */
+        padding: 10px 14px;
         border-radius: var(--radius);
-        border: none;
+        border: 1px solid transparent;
         background-color: var(--accent);
-        color: #fff;
+        color: #061314;
         font-weight: bold;
         cursor: pointer;
         transition: var(--transition);
-        font-size: 15px; /* サイズ微増 */
-        min-height: 44px;
+        font-size: 14px;
+        min-height: 42px;
     }
     .btn:hover { background-color: var(--accent-hover); }
-    .btn-danger { background-color: var(--panel-bg); border: 1px solid var(--danger); color: var(--danger); }
+    .btn-danger { background-color: transparent; border-color: var(--danger); color: var(--danger); }
     .btn-danger:hover { background-color: var(--danger); color: #fff; }
-    .btn-secondary { background-color: #444; }
-    .btn-secondary:hover { background-color: #555; }
+    .btn-secondary { background-color: var(--surface); border-color: var(--border); color: var(--text-main); }
+    .btn-secondary:hover { background-color: #2a3038; }
     
     /* モバイル向け微調整 */
     @media (max-width: 480px) {
-        body { padding-bottom: 20px; }
+        .header { padding: 16px; }
+        .tab-nav { top: 48px; }
         .tab-content { padding: 16px; }
-        .form-row { flex-direction: column; align-items: stretch; gap: 16px; }
+        .form-row { grid-template-columns: 1fr; }
+        .profile-actions { grid-template-columns: 1fr; }
     }
 </style>
 </head>
@@ -247,13 +321,7 @@
                 <option value="lmstudio">LM Studio (ローカルLLM)</option>
             </select>
 
-            <div id="lmstudio-config-group" class="api-key-group" style="display:none;">
-                <label for="lmstudioEndpoint">LM Studio エンドポイント</label>
-                <input type="text" id="lmstudioEndpoint" placeholder="http://localhost:1234">
-
-                <label for="lmstudioApiToken">API Token <span class="note">※LM Studio側で認証を有効にした場合のみ入力</span></label>
-                <input type="password" id="lmstudioApiToken" placeholder="未入力なら認証なし">
-
+            <div id="lmstudio-config-group" class="api-key-group">
                 <label for="lmstudioModel">モデル名</label>
                 <div class="profile-actions">
                     <select id="lmstudioModel">
@@ -261,7 +329,7 @@
                     </select>
                     <button id="refreshLmstudioModelsBtn" class="btn btn-secondary" type="button">更新</button>
                 </div>
-                <div id="lmstudioModelsStatus" class="status-text" style="font-size:11px; margin-top:4px; color:#888;"></div>
+                <div id="lmstudioModelsStatus" class="status-text"></div>
 
                 <label class="toggle-wrapper">
                     <span class="toggle-label">LM Studioモデルを起動</span>
@@ -270,7 +338,7 @@
                         <span class="slider"></span>
                     </label>
                 </label>
-                <div id="lmstudioStatus" class="status-text" style="font-size:11px; margin-top:4px; color:#888;">停止中</div>
+                <div id="lmstudioStatus" class="status-text">停止中</div>
             </div>
         </div>
 
@@ -282,7 +350,7 @@
             </label>
         </label>
 
-        <h4 style="margin-top: 24px;">機能のオン・オフ</h4>
+        <h4 class="section-spacer">機能のオン・オフ</h4>
         <label class="toggle-wrapper">
             <span class="toggle-label">チャット欄に翻訳を表示</span>
             <label class="toggle-switch">
@@ -291,7 +359,7 @@
             </label>
         </label>
         
-        <label class="toggle-wrapper" style="margin-bottom: 8px;">
+        <label class="toggle-wrapper tight-bottom">
             <span class="toggle-label">画面にコメントを流す (フロー)</span>
             <label class="toggle-switch">
                 <input type="checkbox" id="enableFlowComments">
@@ -299,7 +367,7 @@
             </label>
         </label>
 
-        <div class="form-group" style="margin-top: 12px;">
+        <div class="form-group small-top">
             <label for="overlayPosition">ボタン表示位置</label>
             <select id="overlayPosition">
                 <option value="top_right">右上</option>
@@ -309,7 +377,7 @@
             </select>
         </div>
 
-        <h4 style="margin-top: 24px;">フローコメント設定</h4>
+        <h4 class="section-spacer">フローコメント設定</h4>
         <div class="form-group">
             <label for="flowContent">流す内容</label>
             <select id="flowContent">
@@ -358,13 +426,13 @@
             <input type="text" id="customFontFamily" placeholder="例: '游ゴシック体'">
         </div>
         
-        <h4 style="margin-top: 24px;">フロー文字色</h4>
-        <div class="form-row" style="flex-wrap: wrap;">
-            <div class="col" style="min-width: 30%;"><label for="normalColor">通常</label><input type="color" id="normalColor"></div>
-            <div class="col" style="min-width: 30%;"><label for="memberColor">メンバー</label><input type="color" id="memberColor"></div>
-            <div class="col" style="min-width: 30%;"><label for="moderatorColor">モデレーター</label><input type="color" id="moderatorColor"></div>
-            <div class="col" style="min-width: 30%;"><label for="superchatColor">スパチャ</label><input type="color" id="superchatColor"></div>
-            <div class="col" style="min-width: 30%;"><label for="membershipColorFlow">新メンバー</label><input type="color" id="membershipColorFlow"></div>
+        <h4 class="section-spacer">フロー文字色</h4>
+        <div class="color-grid">
+            <div class="col"><label for="normalColor">通常</label><input type="color" id="normalColor"></div>
+            <div class="col"><label for="memberColor">メンバー</label><input type="color" id="memberColor"></div>
+            <div class="col"><label for="moderatorColor">モデレーター</label><input type="color" id="moderatorColor"></div>
+            <div class="col"><label for="superchatColor">スパチャ</label><input type="color" id="superchatColor"></div>
+            <div class="col"><label for="membershipColorFlow">新メンバー</label><input type="color" id="membershipColorFlow"></div>
         </div>
     </div>
     
@@ -383,7 +451,7 @@
             <label for="ngUsers">1行に1人入力</label>
             <textarea id="ngUsers" rows="6" placeholder="NGにしたいユーザー名"></textarea>
         </div>
-        <h4 style="margin-top: 24px;">NGワード設定</h4>
+        <h4 class="section-spacer">NGワード設定</h4>
         <div class="form-group">
             <label for="ngWords">1行に1つ入力</label>
             <textarea id="ngWords" rows="6" placeholder="NGにしたい単語"></textarea>
@@ -400,7 +468,7 @@
             </div>
         </div>
         
-        <h4 style="margin-top: 32px;">プロファイルの読み込み</h4>
+        <h4 class="section-spacer">プロファイルの読み込み</h4>
         <div class="form-group">
             <label for="profileSelector">保存済みプロファイル</label>
             <div class="profile-actions">
@@ -408,8 +476,8 @@
                 <button id="loadProfileBtn" class="btn btn-secondary">読み込む</button>
             </div>
         </div>
-        <div style="margin-top: 16px; text-align: right;">
-            <button id="deleteProfileBtn" class="btn btn-danger" style="width: 100%;">選択したプロファイルを削除</button>
+        <div class="profile-footer">
+            <button id="deleteProfileBtn" class="btn btn-danger full-width">選択したプロファイルを削除</button>
         </div>
     </div>
 

@@ -16,9 +16,7 @@ let currentTabId = null;
 
 const DEFAULTS = {
     translator: 'google',
-    lmstudioEndpoint: 'http://localhost:1234',
     lmstudioModel: '',
-    lmstudioApiToken: '',
     lmstudioModelActive: false,
     ollamaEndpoint: 'http://localhost:11434',
     ollamaModel: 'youtube-translator:latest',
