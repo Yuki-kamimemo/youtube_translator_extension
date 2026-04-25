@@ -39,6 +39,7 @@
         "*://www.youtube.com/*",
         "*://m.youtube.com/*",
         "https://*.googleapis.com/*",
+        "http://localhost:1234/*",
         "http://localhost:11434/*",
         "https://translate.googleapis.com/*"
     ],

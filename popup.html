@@ -244,30 +244,33 @@
             <label for="translator">翻訳サービス</label>
             <select id="translator">
                 <option value="google">Google翻訳 (APIキー不要)</option>
-                <option value="ollama">Ollama (ローカルLLM)</option>
+                <option value="lmstudio">LM Studio (ローカルLLM)</option>
             </select>
 
-            <div id="ollama-config-group" class="api-key-group" style="display:none;">
-                <label for="ollamaEndpoint">Ollama エンドポイント</label>
-                <input type="text" id="ollamaEndpoint" placeholder="http://localhost:11434">
+            <div id="lmstudio-config-group" class="api-key-group" style="display:none;">
+                <label for="lmstudioEndpoint">LM Studio エンドポイント</label>
+                <input type="text" id="lmstudioEndpoint" placeholder="http://localhost:1234">
 
-                <label for="ollamaModel">モデル名</label>
+                <label for="lmstudioApiToken">API Token <span class="note">※LM Studio側で認証を有効にした場合のみ入力</span></label>
+                <input type="password" id="lmstudioApiToken" placeholder="未入力なら認証なし">
+
+                <label for="lmstudioModel">モデル名</label>
                 <div class="profile-actions">
-                    <select id="ollamaModel">
-                        <option value="youtube-translator:latest">youtube-translator:latest</option>
+                    <select id="lmstudioModel">
+                        <option value="">モデルを選択してください</option>
                     </select>
-                    <button id="refreshOllamaModelsBtn" class="btn btn-secondary" type="button">更新</button>
+                    <button id="refreshLmstudioModelsBtn" class="btn btn-secondary" type="button">更新</button>
                 </div>
-                <div id="ollamaModelsStatus" class="status-text" style="font-size:11px; margin-top:4px; color:#888;"></div>
+                <div id="lmstudioModelsStatus" class="status-text" style="font-size:11px; margin-top:4px; color:#888;"></div>
 
                 <label class="toggle-wrapper">
-                    <span class="toggle-label">Ollamaモデルを起動</span>
+                    <span class="toggle-label">LM Studioモデルを起動</span>
                     <label class="toggle-switch">
-                        <input type="checkbox" id="ollamaModelActive">
+                        <input type="checkbox" id="lmstudioModelActive">
                         <span class="slider"></span>
                     </label>
                 </label>
-                <div id="ollamaStatus" class="status-text" style="font-size:11px; margin-top:4px; color:#888;">停止中</div>
+                <div id="lmstudioStatus" class="status-text" style="font-size:11px; margin-top:4px; color:#888;">停止中</div>
             </div>
         </div>
 

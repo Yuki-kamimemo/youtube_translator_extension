@@ -15,8 +15,15 @@ let hiddenChatIframe = null;
 let currentTabId = null;
 
 const DEFAULTS = {
-    translator: 'google', ollamaEndpoint: 'http://localhost:11434', ollamaModel: 'youtube-translator:latest',
-    ollamaModelActive: false, enableInlineTranslation: true,
+    translator: 'google',
+    lmstudioEndpoint: 'http://localhost:1234',
+    lmstudioModel: '',
+    lmstudioApiToken: '',
+    lmstudioModelActive: false,
+    ollamaEndpoint: 'http://localhost:11434',
+    ollamaModel: 'youtube-translator:latest',
+    ollamaModelActive: false,
+    enableInlineTranslation: true,
     enableGoogleTranslateFallback: true, enableFlowComments: true, flowContent: 'translation',
     flowTime: 8, fontSize: 24, opacity: 0.9, position: 'top_priority',
     strokeWidth: 1.5, strokeColor: '#000000',

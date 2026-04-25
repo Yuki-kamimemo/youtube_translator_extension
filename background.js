@@ -5,12 +5,47 @@ const MAX_CACHE_SIZE = 2000;
 
 const SETTINGS_DEFAULTS = {
     translator: 'google',
+    lmstudioEndpoint: 'http://localhost:1234',
+    lmstudioModel: '',
+    lmstudioApiToken: '',
+    lmstudioModelActive: false,
     ollamaEndpoint: 'http://localhost:11434',
     ollamaModel: 'youtube-translator:latest',
     ollamaModelActive: false,
     enableGoogleTranslateFallback: true,
     dictionary: ''
 };
+
+function normalizeSettings(settings) {
+    const normalized = { ...settings };
+    if (normalized.translator === 'ollama') normalized.translator = 'lmstudio';
+    if (!normalized.lmstudioEndpoint && normalized.ollamaEndpoint) normalized.lmstudioEndpoint = normalized.ollamaEndpoint;
+    if (!normalized.lmstudioModel && normalized.ollamaModel) normalized.lmstudioModel = normalized.ollamaModel;
+    if (normalized.lmstudioModelActive === undefined && normalized.ollamaModelActive !== undefined) {
+        normalized.lmstudioModelActive = normalized.ollamaModelActive;
+    }
+    normalized.lmstudioEndpoint = normalized.lmstudioEndpoint || 'http://localhost:1234';
+    normalized.lmstudioModel = normalized.lmstudioModel || '';
+    normalized.lmstudioApiToken = normalized.lmstudioApiToken || '';
+    normalized.lmstudioModelActive = normalized.lmstudioModelActive === true;
+    return normalized;
+}
+
+function lmstudioHeaders(apiToken) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiToken) headers.Authorization = `Bearer ${apiToken}`;
+    return headers;
+}
+
+function extractLmstudioText(data) {
+    const messages = Array.isArray(data?.output)
+        ? data.output
+            .filter(item => item?.type === 'message' && typeof item.content === 'string')
+            .map(item => item.content.trim())
+            .filter(Boolean)
+        : [];
+    return messages.join('\n').trim();
+}
 
 // タブが閉じられたらタブ固有の設定をクリア
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -119,38 +154,43 @@ async function translateWithGoogle(text) {
     }
 }
 
-async function translateWithOllama(text, settings) {
-    const endpoint = (settings.ollamaEndpoint || 'http://localhost:11434').replace(/\/$/, '');
-    const model = settings.ollamaModel || 'youtube-translator:latest';
+async function translateWithLmstudio(text, settings) {
+    const endpoint = (settings.lmstudioEndpoint || 'http://localhost:1234').replace(/\/$/, '');
+    const model = settings.lmstudioModel;
+    if (!model) throw new Error('LM Studio model is not selected');
     const systemPrompt = `You are a specialist AI for translating YouTube live chat messages.
 Translate English chat (including internet slang and gaming terms) into natural, casual Japanese (tame-guchi).
 Provide ONLY the translated text. No explanations or notes.`;
-    const body = {
+    const bodyWithReasoning = {
         model,
-        messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: text }
-        ],
+        input: text,
+        system_prompt: systemPrompt,
         stream: false,
-        think: false,
-        keep_alive: settings.ollamaModelActive ? -1 : '5m',
-        options: { temperature: 0.3 }
+        temperature: 0.3,
+        store: false,
+        reasoning: 'off'
     };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
-        const response = await fetch(`${endpoint}/api/chat`, {
+        const requestChat = (body) => fetch(`${endpoint}/api/v1/chat`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: lmstudioHeaders(settings.lmstudioApiToken),
             body: JSON.stringify(body),
             signal: controller.signal
         });
-        if (!response.ok) throw new Error(`Ollama HTTP ${response.status}`);
+        let response = await requestChat(bodyWithReasoning);
+        if (!response.ok && response.status >= 400) {
+            const retryBody = { ...bodyWithReasoning };
+            delete retryBody.reasoning;
+            response = await requestChat(retryBody);
+        }
+        if (!response.ok) throw new Error(`LM Studio HTTP ${response.status}`);
         const data = await response.json();
-        let out = (data.message?.content || '').trim();
+        let out = extractLmstudioText(data);
         out = out.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
         out = out.replace(/^["'「『]/, '').replace(/["'」』]$/, '').trim();
-        if (!out) throw new Error('Ollama empty response');
+        if (!out) throw new Error('LM Studio empty response');
         return { translation: out };
     } finally {
         clearTimeout(timer);
@@ -158,22 +198,23 @@ Provide ONLY the translated text. No explanations or notes.`;
 }
 
 async function handleTranslationRequest(text, settings) {
-    const { translator, ollamaModelActive, enableGoogleTranslateFallback, dictionary } = settings;
+    settings = normalizeSettings(settings);
+    const { translator, lmstudioModelActive, enableGoogleTranslateFallback, dictionary } = settings;
     let processedText = preprocessForYouTubeChat(text);
     processedText = preprocessWithDictionary(processedText, dictionary);
     let result;
-    const useOllama = translator === 'ollama' && ollamaModelActive === true;
-    let usedTranslator = useOllama ? 'ollama' : 'google';
+    const useLmstudio = translator === 'lmstudio' && lmstudioModelActive === true;
+    let usedTranslator = useLmstudio ? 'lmstudio' : 'google';
 
-    if (useOllama) {
+    if (useLmstudio) {
         try {
-            result = await translateWithOllama(processedText, settings);
+            result = await translateWithLmstudio(processedText, settings);
         } catch (e) {
             if (enableGoogleTranslateFallback) {
                 result = await translateWithGoogle(processedText);
                 usedTranslator = 'google';
             } else {
-                return { error: 'Ollama翻訳エラー' };
+                return { error: 'LM Studio翻訳エラー' };
             }
         }
     } else {
@@ -187,10 +228,84 @@ async function handleTranslationRequest(text, settings) {
             const firstKey = translationCache.keys().next().value;
             translationCache.delete(firstKey);
         }
-        const cacheKey = `${usedTranslator}:${usedTranslator === 'ollama' ? (settings.ollamaModel || '') : ''}:${text}`;
+        const cacheKey = `${usedTranslator}:${usedTranslator === 'lmstudio' ? (settings.lmstudioModel || '') : ''}:${text}`;
         translationCache.set(cacheKey, { translation: finalResult.translation, timestamp: Date.now() });
     }
     return finalResult;
+}
+
+async function listLmstudioModels(endpoint, apiToken) {
+    const ep = (endpoint || 'http://localhost:1234').replace(/\/$/, '');
+    const response = await fetch(`${ep}/api/v1/models`, {
+        headers: lmstudioHeaders(apiToken)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return Array.isArray(data.models)
+        ? data.models
+            .filter(model => model?.type === 'llm')
+            .map(model => model.selected_variant || model.key)
+            .filter(Boolean)
+        : [];
+}
+
+async function getLmstudioLoadedInstanceId(endpoint, apiToken, model) {
+    const ep = (endpoint || 'http://localhost:1234').replace(/\/$/, '');
+    const v1Response = await fetch(`${ep}/api/v1/models`, {
+        headers: lmstudioHeaders(apiToken)
+    });
+    if (!v1Response.ok) throw new Error(`HTTP ${v1Response.status}`);
+    const v1Data = await v1Response.json();
+    const v1Models = Array.isArray(v1Data.models) ? v1Data.models : [];
+    const target = v1Models.find(item =>
+        item?.key === model ||
+        item?.selected_variant === model ||
+        (Array.isArray(item?.variants) && item.variants.includes(model))
+    );
+    const v1InstanceId = target?.loaded_instances?.[0]?.id;
+    if (v1InstanceId) return v1InstanceId;
+
+    const v0Response = await fetch(`${ep}/api/v0/models`, {
+        headers: lmstudioHeaders(apiToken)
+    });
+    if (!v0Response.ok) return null;
+    const v0Data = await v0Response.json();
+    const v0Models = Array.isArray(v0Data.data) ? v0Data.data : [];
+    const loaded = v0Models.find(item =>
+        item?.state === 'loaded' &&
+        (item.id === model || item.id === target?.key || item.id === target?.selected_variant)
+    );
+    return loaded?.id || null;
+}
+
+async function unloadLmstudioModel(endpoint, apiToken, model) {
+    const ep = (endpoint || 'http://localhost:1234').replace(/\/$/, '');
+    const instanceId = await getLmstudioLoadedInstanceId(ep, apiToken, model);
+    if (!instanceId) return;
+    const unloadResponse = await fetch(`${ep}/api/v1/models/unload`, {
+        method: 'POST',
+        headers: lmstudioHeaders(apiToken),
+        body: JSON.stringify({ instance_id: instanceId })
+    });
+    if (unloadResponse.status === 404) return;
+    if (!unloadResponse.ok) throw new Error(`HTTP ${unloadResponse.status}`);
+}
+
+async function warmupLmstudioModel(endpoint, apiToken, model) {
+    const ep = (endpoint || 'http://localhost:1234').replace(/\/$/, '');
+    const response = await fetch(`${ep}/api/v1/chat`, {
+        method: 'POST',
+        headers: lmstudioHeaders(apiToken),
+        body: JSON.stringify({
+            model,
+            input: 'OK',
+            system_prompt: 'Reply with OK only.',
+            stream: false,
+            temperature: 0,
+            store: false
+        })
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -207,37 +322,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (sender.tab?.id) chrome.tabs.sendMessage(sender.tab.id, request);
             return;
         }
-        if (request.action === 'ollamaListModels') {
-            const ep = (request.endpoint || 'http://localhost:11434').replace(/\/$/, '');
+        if (request.action === 'lmstudioListModels') {
             try {
-                const response = await fetch(`${ep}/api/tags`);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const data = await response.json();
-                const models = Array.isArray(data.models)
-                    ? data.models.map(model => model.name).filter(Boolean)
-                    : [];
+                const models = await listLmstudioModels(request.endpoint, request.apiToken);
                 sendResponse({ ok: true, models });
             } catch (e) {
                 sendResponse({ ok: false, error: String(e.message || e) });
             }
             return;
         }
-        if (request.action === 'ollamaSetActive') {
-            const { active, endpoint, model } = request;
-            const ep = (endpoint || 'http://localhost:11434').replace(/\/$/, '');
-            const m = model || 'youtube-translator:latest';
+        if (request.action === 'lmstudioSetActive') {
+            const { active, endpoint, model, apiToken } = request;
+            const ep = (endpoint || 'http://localhost:1234').replace(/\/$/, '');
+            const m = model || '';
             try {
-                const response = await fetch(`${ep}/api/generate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: m,
-                        prompt: '',
-                        keep_alive: active ? -1 : 0,
-                        stream: false
-                    })
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                if (active) {
+                    if (!m) throw new Error('モデルが選択されていません');
+                    const response = await fetch(`${ep}/api/v1/models/load`, {
+                        method: 'POST',
+                        headers: lmstudioHeaders(apiToken),
+                        body: JSON.stringify({ model: m })
+                    });
+                    if (response.status === 404) {
+                        await warmupLmstudioModel(ep, apiToken, m);
+                    } else if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } else if (m) {
+                    await unloadLmstudioModel(ep, apiToken, m);
+                }
                 sendResponse({ ok: true });
             } catch (e) {
                 sendResponse({ ok: false, error: String(e.message || e) });
@@ -247,10 +360,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === "translate") {
             const text = request.text;
             if (!text) { sendResponse({ error: 'No text' }); return; }
-            const settings = await new Promise(r => chrome.storage.sync.get(SETTINGS_DEFAULTS, r));
-            const useOllama = settings.translator === 'ollama' && settings.ollamaModelActive === true;
-            const usedTranslator = useOllama ? 'ollama' : 'google';
-            const cacheKey = `${usedTranslator}:${usedTranslator === 'ollama' ? (settings.ollamaModel || '') : ''}:${text}`;
+            const settings = normalizeSettings(await new Promise(r => chrome.storage.sync.get(SETTINGS_DEFAULTS, r)));
+            const useLmstudio = settings.translator === 'lmstudio' && settings.lmstudioModelActive === true;
+            const usedTranslator = useLmstudio ? 'lmstudio' : 'google';
+            const cacheKey = `${usedTranslator}:${usedTranslator === 'lmstudio' ? (settings.lmstudioModel || '') : ''}:${text}`;
             const cached = translationCache.get(cacheKey);
             if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
                 sendResponse({ translation: cached.translation });
