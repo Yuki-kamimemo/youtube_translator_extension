@@ -158,13 +158,14 @@ Provide ONLY the translated text. No explanations or notes.`;
 }
 
 async function handleTranslationRequest(text, settings) {
-    const { translator, enableGoogleTranslateFallback, dictionary } = settings;
+    const { translator, ollamaModelActive, enableGoogleTranslateFallback, dictionary } = settings;
     let processedText = preprocessForYouTubeChat(text);
     processedText = preprocessWithDictionary(processedText, dictionary);
     let result;
-    let usedTranslator = translator;
+    const useOllama = translator === 'ollama' && ollamaModelActive === true;
+    let usedTranslator = useOllama ? 'ollama' : 'google';
 
-    if (translator === 'ollama') {
+    if (useOllama) {
         try {
             result = await translateWithOllama(processedText, settings);
         } catch (e) {
@@ -186,7 +187,7 @@ async function handleTranslationRequest(text, settings) {
             const firstKey = translationCache.keys().next().value;
             translationCache.delete(firstKey);
         }
-        const cacheKey = `${translator}:${settings.ollamaModel || ''}:${text}`;
+        const cacheKey = `${usedTranslator}:${usedTranslator === 'ollama' ? (settings.ollamaModel || '') : ''}:${text}`;
         translationCache.set(cacheKey, { translation: finalResult.translation, timestamp: Date.now() });
     }
     return finalResult;
@@ -247,7 +248,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const text = request.text;
             if (!text) { sendResponse({ error: 'No text' }); return; }
             const settings = await new Promise(r => chrome.storage.sync.get(SETTINGS_DEFAULTS, r));
-            const cacheKey = `${settings.translator}:${settings.ollamaModel || ''}:${text}`;
+            const useOllama = settings.translator === 'ollama' && settings.ollamaModelActive === true;
+            const usedTranslator = useOllama ? 'ollama' : 'google';
+            const cacheKey = `${usedTranslator}:${usedTranslator === 'ollama' ? (settings.ollamaModel || '') : ''}:${text}`;
             const cached = translationCache.get(cacheKey);
             if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
                 sendResponse({ translation: cached.translation });
