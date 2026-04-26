@@ -238,6 +238,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 let slangMap = null;
 let slangMapPromise = null;
+let slangRegexEntries = null;
+
+function buildSlangRegexEntries(map) {
+    return Object.entries(map).map(([pattern, replacement]) => ({
+        regex: new RegExp(pattern, 'gi'),
+        replacement,
+    }));
+}
 
 async function loadSlangMap() {
     if (slangMap) return slangMap;
@@ -247,10 +255,12 @@ async function loadSlangMap() {
             .then(res => res.json())
             .then(data => {
                 slangMap = data || {};
+                slangRegexEntries = buildSlangRegexEntries(slangMap);
                 return slangMap;
             })
             .catch(() => {
                 slangMap = {};
+                slangRegexEntries = [];
                 return slangMap;
             });
     }
@@ -259,13 +269,14 @@ async function loadSlangMap() {
 
 async function preprocessForYouTubeChat(text) {
     if (!text) return text;
-    const currentSlangMap = await loadSlangMap();
+    await loadSlangMap();
     let processed = text.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
     processed = processed.replace(/([\p{Emoji}])([a-zA-Z0-9])/gu, '$1 $2');
     processed = processed.replace(/([a-zA-Z0-9])([\p{Emoji}])/gu, '$1 $2');
     processed = processed.replace(/([a-zA-Z])\1{2,}/gi, '$1$1');
-    for (const [pattern, replacement] of Object.entries(currentSlangMap)) {
-        processed = processed.replace(new RegExp(pattern, 'gi'), replacement);
+    for (const { regex, replacement } of slangRegexEntries) {
+        regex.lastIndex = 0;
+        processed = processed.replace(regex, replacement);
     }
     return processed;
 }
@@ -301,23 +312,29 @@ function preprocessWithDictionary(text, dictionaryStr) {
     return processedText;
 }
 
+const JAPANESE_POSTPROCESS_RULES = [
+    [/ですね/g, 'だね'],
+    [/ですよ/g, 'だよ'],
+    [/でしょう/g, 'だろう'],
+    [/ますか\？/g, '？'],
+    [/ではありません/g, 'じゃない'],
+    [/することができません/g, 'できない'],
+    [/することができます/g, 'できる'],
+    [/てしまいました/g, 'てしまった'],
+    [/ということです/g, 'ってこと'],
+    [/かもしれません/g, 'かもしれない'],
+    [/なのです/g, 'なんだ'],
+    [/しています/g, 'してる'],
+    [/ています/g, 'てる'],
+    [/ありません/g, 'ない'],
+];
+
 function postprocessJapanese(translationObj) {
     if (!translationObj || !translationObj.translation) return translationObj;
     let text = translationObj.translation;
-    text = text.replace(/ですね/g, 'だね');
-    text = text.replace(/ですよ/g, 'だよ');
-    text = text.replace(/でしょう/g, 'だろう');
-    text = text.replace(/ますか\？/g, '？');
-    text = text.replace(/ではありません/g, 'じゃない');
-    text = text.replace(/することができません/g, 'できない');
-    text = text.replace(/することができます/g, 'できる');
-    text = text.replace(/てしまいました/g, 'てしまった');
-    text = text.replace(/ということです/g, 'ってこと');
-    text = text.replace(/かもしれません/g, 'かもしれない');
-    text = text.replace(/なのです/g, 'なんだ');
-    text = text.replace(/しています/g, 'してる');
-    text = text.replace(/ています/g, 'てる');
-    text = text.replace(/ありません/g, 'ない');
+    for (const [regex, replacement] of JAPANESE_POSTPROCESS_RULES) {
+        text = text.replace(regex, replacement);
+    }
     translationObj.translation = text;
     return translationObj;
 }

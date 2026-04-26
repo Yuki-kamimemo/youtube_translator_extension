@@ -45,11 +45,7 @@
             ],
             "js": [
                 "translation.js",
-                "flow.js",
-                "content_script.js"
-            ],
-            "css": [
-                "content_script.css"
+                "chat_observer.js"
             ],
             "all_frames": true
         }

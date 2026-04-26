@@ -60,6 +60,39 @@ const ALLOWED_IMG_HOSTS = [
     'www.gstatic.com',
 ];
 
+function walkSafeContent(node, parent) {
+    if (node.nodeType === Node.TEXT_NODE) {
+        parent.appendChild(document.createTextNode(node.textContent));
+        return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const tag = node.tagName.toLowerCase();
+    if (tag === 'img') {
+        try {
+            const url = new URL(node.src);
+            if (ALLOWED_IMG_HOSTS.includes(url.hostname)) {
+                const img = document.createElement('img');
+                img.src = node.src;
+                if (node.alt) img.alt = node.alt;
+                if (node.className) img.className = node.className;
+                parent.appendChild(img);
+            }
+        } catch (_) { /* 不正なURLは無視 */ }
+        return;
+    }
+    if (tag === 'span' || tag === 'br') {
+        const el = document.createElement(tag);
+        if (node.className) el.className = node.className;
+        parent.appendChild(el);
+        node.childNodes.forEach(child => walkSafeContent(child, el));
+        return;
+    }
+
+    // 許可外タグは子ノードだけ再帰的に処理（タグ自体は無視）
+    node.childNodes.forEach(child => walkSafeContent(child, parent));
+}
+
 /**
  * HTML文字列をtemplateで解析し、許可タグ（text/img/span/br）のみを
  * DocumentFragmentとして安全に再構築する（XSS対策）
@@ -68,40 +101,7 @@ function createSafeContent(htmlString) {
     safeContentTemplate.innerHTML = htmlString || '';
     const fragment = document.createDocumentFragment();
 
-    const walk = (node, parent) => {
-        if (node.nodeType === Node.TEXT_NODE) {
-            parent.appendChild(document.createTextNode(node.textContent));
-            return;
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE) return;
-
-        const tag = node.tagName.toLowerCase();
-        if (tag === 'img') {
-            try {
-                const url = new URL(node.src);
-                if (ALLOWED_IMG_HOSTS.includes(url.hostname)) {
-                    const img = document.createElement('img');
-                    img.src = node.src;
-                    if (node.alt) img.alt = node.alt;
-                    if (node.className) img.className = node.className;
-                    parent.appendChild(img);
-                }
-            } catch (_) { /* 不正なURLは無視 */ }
-            return;
-        }
-        if (tag === 'span' || tag === 'br') {
-            const el = document.createElement(tag);
-            if (node.className) el.className = node.className;
-            parent.appendChild(el);
-            node.childNodes.forEach(child => walk(child, el));
-            return;
-        }
-
-        // 許可外タグは子ノードだけ再帰的に処理（タグ自体は無視）
-        node.childNodes.forEach(child => walk(child, parent));
-    };
-
-    safeContentTemplate.content.childNodes.forEach(child => walk(child, fragment));
+    safeContentTemplate.content.childNodes.forEach(child => walkSafeContent(child, fragment));
     safeContentTemplate.innerHTML = '';
     return fragment;
 }
