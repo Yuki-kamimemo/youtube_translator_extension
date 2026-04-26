@@ -24,6 +24,25 @@
                 "*://www.youtube.com/*",
                 "*://m.youtube.com/*"
             ],
+            "exclude_matches": [
+                "*://www.youtube.com/live_chat*",
+                "*://m.youtube.com/live_chat*"
+            ],
+            "js": [
+                "translation.js",
+                "flow.js",
+                "content_script.js"
+            ],
+            "css": [
+                "content_script.css"
+            ],
+            "all_frames": false
+        },
+        {
+            "matches": [
+                "*://www.youtube.com/live_chat*",
+                "*://m.youtube.com/live_chat*"
+            ],
             "js": [
                 "translation.js",
                 "flow.js",

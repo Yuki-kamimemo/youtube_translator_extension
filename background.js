@@ -1,7 +1,7 @@
 const translationCache = new Map();
 const pendingTranslations = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5分
-const MAX_CACHE_SIZE = 2000;
+const MAX_CACHE_SIZE = 1000;
 const CACHE_VERSION = 'lmstudio-clean-v5';
 const LMSTUDIO_ENDPOINT = 'http://localhost:1234';
 
@@ -236,19 +236,35 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     }
 });
 
-let slangMap = {};
-fetch(chrome.runtime.getURL('slang_dict.json'))
-    .then(res => res.json())
-    .then(data => { slangMap = data; })
-    .catch(() => {});
+let slangMap = null;
+let slangMapPromise = null;
 
-function preprocessForYouTubeChat(text) {
+async function loadSlangMap() {
+    if (slangMap) return slangMap;
+    if (!slangMapPromise) {
+        const slangDictUrl = chrome.runtime.getURL('slang_dict.json');
+        slangMapPromise = fetch(slangDictUrl)
+            .then(res => res.json())
+            .then(data => {
+                slangMap = data || {};
+                return slangMap;
+            })
+            .catch(() => {
+                slangMap = {};
+                return slangMap;
+            });
+    }
+    return slangMapPromise;
+}
+
+async function preprocessForYouTubeChat(text) {
     if (!text) return text;
+    const currentSlangMap = await loadSlangMap();
     let processed = text.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
     processed = processed.replace(/([\p{Emoji}])([a-zA-Z0-9])/gu, '$1 $2');
     processed = processed.replace(/([a-zA-Z0-9])([\p{Emoji}])/gu, '$1 $2');
     processed = processed.replace(/([a-zA-Z])\1{2,}/gi, '$1$1');
-    for (const [pattern, replacement] of Object.entries(slangMap)) {
+    for (const [pattern, replacement] of Object.entries(currentSlangMap)) {
         processed = processed.replace(new RegExp(pattern, 'gi'), replacement);
     }
     return processed;
@@ -384,7 +400,7 @@ Keep names like Vox unchanged.`;
 async function handleTranslationRequest(text, settings) {
     settings = normalizeSettings(settings);
     const { translator, lmstudioModelActive, enableGoogleTranslateFallback, dictionary } = settings;
-    let processedText = preprocessForYouTubeChat(text);
+    let processedText = await preprocessForYouTubeChat(text);
     processedText = preprocessWithDictionary(processedText, dictionary);
     let result;
     const useLmstudio = translator === 'lmstudio' && lmstudioModelActive === true;

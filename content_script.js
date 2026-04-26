@@ -13,6 +13,10 @@ let isInitialized = false;
 let initializationRetryTimer = null;
 let hiddenChatIframe = null;
 let currentTabId = null;
+let settingsPanelCleanup = null;
+let hiddenChatWaitObserver = null;
+let pageStateGeneration = 0;
+const managedTimeouts = new Set();
 
 const DEFAULTS = {
     translator: 'google',
@@ -208,7 +212,11 @@ function createToggleButton(id, settingKey, labelPrefix, parentContainer) {
 }
 
 function toggleSettingsPanel() {
-    const panel = document.getElementById('ylc-settings-panel');
+    let panel = document.getElementById('ylc-settings-panel');
+    if (!panel) {
+        createSettingsPanel();
+        panel = document.getElementById('ylc-settings-panel');
+    }
     if (panel) {
         const isVisible = panel.style.display === 'flex';
         panel.style.display = isVisible ? 'none' : 'flex';
@@ -219,6 +227,7 @@ function createSettingsPanel() {
     if (document.getElementById('ylc-settings-panel')) return;
     const panel = document.createElement('div');
     panel.id = 'ylc-settings-panel';
+    panel.style.display = 'none';
     const header = document.createElement('div');
     header.id = 'ylc-settings-header';
     header.textContent = 'チャット翻訳・表示設定';
@@ -287,21 +296,23 @@ function createSettingsPanel() {
         panel.style.transition = 'none';
     }, { passive: true });
 
-    document.addEventListener('mousemove', (e) => {
+    const onMouseMove = (e) => {
         if (isDragging && !isMobile()) {
             panel.style.left = `${e.clientX - offsetX}px`;
             panel.style.top = `${e.clientY - offsetY}px`;
             panel.style.right = 'auto';
         }
-    });
+    };
+    document.addEventListener('mousemove', onMouseMove);
 
-    document.addEventListener('touchmove', (e) => {
+    const onTouchMove = (e) => {
         if (isDragging && !isMobile()) {
             panel.style.left = `${e.touches[0].clientX - offsetX}px`;
             panel.style.top = `${e.touches[0].clientY - offsetY}px`;
             panel.style.right = 'auto';
         }
-    }, { passive: true });
+    };
+    document.addEventListener('touchmove', onTouchMove, { passive: true });
 
     const endDrag = () => {
         if (isDragging) {
@@ -321,6 +332,16 @@ function createSettingsPanel() {
         }
     });
     resizeObserver.observe(panel);
+
+    settingsPanelCleanup = () => {
+        clearTimeout(layoutSaveTimer);
+        resizeObserver.disconnect();
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('touchmove', onTouchMove);
+        document.removeEventListener('mouseup', endDrag);
+        document.removeEventListener('touchend', endDrag);
+        settingsPanelCleanup = null;
+    };
 }
 
 function processNewCommentNode(node) {
@@ -375,7 +396,7 @@ function processNewCommentNode(node) {
 }
 
 const translatedNodes = [];
-const MAX_TRANSLATED_NODES = 200;
+const MAX_TRANSLATED_NODES = 120;
 
 function displayInlineTranslation(node, text, isError = false) {
     const messageEl = node.querySelector('#message');
@@ -390,9 +411,9 @@ function displayInlineTranslation(node, text, isError = false) {
 
     // DOM蓄積防止: 古い翻訳要素を削除
     translatedNodes.push(node);
-    if (translatedNodes.length > MAX_TRANSLATED_NODES) {
+    while (translatedNodes.length > MAX_TRANSLATED_NODES) {
         const oldNode = translatedNodes.shift();
-        const oldTrans = oldNode.querySelector('.ylc-inline-translation');
+        const oldTrans = oldNode?.querySelector('.ylc-inline-translation');
         if (oldTrans) oldTrans.remove();
     }
 }
@@ -463,13 +484,19 @@ function setupHiddenChat() {
     };
 
     if (!checkAndCreate()) {
+        if (hiddenChatWaitObserver) hiddenChatWaitObserver.disconnect();
         const observer = new MutationObserver((mutations, obs) => {
             if (checkAndCreate()) {
                 obs.disconnect();
+                if (hiddenChatWaitObserver === obs) hiddenChatWaitObserver = null;
             }
         });
+        hiddenChatWaitObserver = observer;
         observer.observe(document.body, { childList: true, subtree: true });
-        setTimeout(() => observer.disconnect(), 10000);
+        setManagedTimeout(() => {
+            observer.disconnect();
+            if (hiddenChatWaitObserver === observer) hiddenChatWaitObserver = null;
+        }, 10000);
     }
 }
 
@@ -490,12 +517,68 @@ function createHiddenIframe(videoId) {
     document.body.appendChild(hiddenChatIframe);
 }
 
+function removeHiddenChat() {
+    if (hiddenChatWaitObserver) {
+        hiddenChatWaitObserver.disconnect();
+        hiddenChatWaitObserver = null;
+    }
+    if (hiddenChatIframe) {
+        hiddenChatIframe.remove();
+        hiddenChatIframe = null;
+    }
+}
+
+function removeSettingsPanel() {
+    const panel = document.getElementById('ylc-settings-panel');
+    if (settingsPanelCleanup) settingsPanelCleanup();
+    if (panel) panel.remove();
+}
+
+function cleanupWhenLeavingWatch() {
+    pageStateGeneration++;
+    if (chatObserver) {
+        chatObserver.disconnect();
+        chatObserver = null;
+    }
+    if (initializationRetryTimer) {
+        clearInterval(initializationRetryTimer);
+        initializationRetryTimer = null;
+    }
+    clearManagedTimeouts();
+    translationQueue.length = 0;
+    processedCommentIds.clear();
+    processedCommentIdsQueue.length = 0;
+    if (typeof lanes !== 'undefined') lanes.clear();
+    if (flowContainer) {
+        flowContainer.remove();
+        flowContainer = null;
+    }
+    document.getElementById('ylc-player-controls')?.remove();
+    removeSettingsPanel();
+    removeHiddenChat();
+    isInitialized = false;
+}
+
 // 翻訳スロットリング
 const translationQueue = [];
 let translationActive = 0;
 const MAX_CONCURRENT_TRANSLATIONS = 3;
 const MAX_QUEUE_SIZE = 50;
 const THROTTLE_INTERVAL = 50;
+
+function setManagedTimeout(callback, delay) {
+    const id = setTimeout(() => {
+        managedTimeouts.delete(id);
+        callback();
+    }, delay);
+    managedTimeouts.add(id);
+    return id;
+}
+
+function clearManagedTimeouts() {
+    for (const id of managedTimeouts) clearTimeout(id);
+    managedTimeouts.clear();
+}
 
 function enqueueTranslation(text, callback) {
     if (translationQueue.length >= MAX_QUEUE_SIZE) {
@@ -522,7 +605,7 @@ function processTranslationQueue() {
                 callback(result);
             }
             if (translationQueue.length > 0) {
-                setTimeout(processTranslationQueue, THROTTLE_INTERVAL);
+                setManagedTimeout(processTranslationQueue, THROTTLE_INTERVAL);
             }
         });
     }
@@ -537,7 +620,7 @@ function handleFlowCommentData(data) {
         if (processedCommentIds.has(data.id)) return;
         processedCommentIds.add(data.id);
         processedCommentIdsQueue.push(data.id);
-        if (processedCommentIdsQueue.length > 2000) {
+        if (processedCommentIdsQueue.length > 1000) {
             const oldId = processedCommentIdsQueue.shift();
             processedCommentIds.delete(oldId);
         }
@@ -549,10 +632,13 @@ function handleFlowCommentData(data) {
 
 async function initializeIframe() {
     if (isInitialized) return;
+    const generation = pageStateGeneration;
 
     try {
         const chatApp = await waitForElement('yt-live-chat-app');
+        if (generation !== pageStateGeneration || !location.pathname.startsWith('/live_chat')) return;
         const items = await waitForElement('#items.yt-live-chat-item-list-renderer', chatApp);
+        if (generation !== pageStateGeneration || !location.pathname.startsWith('/live_chat')) return;
         startChatObserver(items);
         isInitialized = true;
         clearInterval(initializationRetryTimer);
@@ -564,9 +650,11 @@ async function initializeIframe() {
 async function initializeTopLevel() {
     if (isInitialized) return;
     if (!location.pathname.startsWith('/watch')) return;
+    const generation = pageStateGeneration;
 
     try {
         const player = await waitForElement('#movie_player');
+        if (generation !== pageStateGeneration || !location.pathname.startsWith('/watch')) return;
         if (player && !document.getElementById('yt-flow-comment-container')) {
             flowContainer = document.createElement('div');
             flowContainer.id = 'yt-flow-comment-container';
@@ -592,7 +680,6 @@ async function initializeTopLevel() {
             player.appendChild(overlay);
         }
 
-        createSettingsPanel();
         isInitialized = true;
     } catch (error) {
         isInitialized = false;
@@ -701,6 +788,11 @@ async function main() {
         if (!window.ylcNavigateListener) {
             window.ylcNavigateListener = true;
             document.body.addEventListener('yt-navigate-finish', () => {
+                if (!location.pathname.startsWith('/watch')) {
+                    cleanupWhenLeavingWatch();
+                    return;
+                }
+                pageStateGeneration++;
                 isInitialized = false;
                 if (initializationRetryTimer) clearInterval(initializationRetryTimer);
                 initializationRetryTimer = setInterval(attemptInitialization, 2000);
