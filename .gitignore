@@ -2,3 +2,4 @@ CLAUDE.md
 .claude/
 *.gguf
 Modelfile-yt-translator
+/docs
