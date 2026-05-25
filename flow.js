@@ -69,6 +69,7 @@ function walkSafeContent(node, parent) {
 
     const tag = node.tagName.toLowerCase();
     if (tag === 'img') {
+        let imageAllowed = false;
         try {
             const url = new URL(node.src);
             if (ALLOWED_IMG_HOSTS.includes(url.hostname)) {
@@ -77,8 +78,12 @@ function walkSafeContent(node, parent) {
                 if (node.alt) img.alt = node.alt;
                 if (node.className) img.className = node.className;
                 parent.appendChild(img);
+                imageAllowed = true;
             }
         } catch (_) { /* 不正なURLは無視 */ }
+        if (!imageAllowed && node.alt) {
+            parent.appendChild(document.createTextNode(node.alt));
+        }
         return;
     }
     if (tag === 'span' || tag === 'br') {
