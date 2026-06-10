@@ -1,5 +1,4 @@
-CLAUDE.md
-.claude/
+﻿.claude/
 *.gguf
 Modelfile-yt-translator
 /docs
