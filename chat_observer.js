@@ -10,7 +10,7 @@ let ngUserList = [];
 let ngWordList = [];
 let isInitialized = false;
 let initializationRetryTimer = null;
-let currentTabId = null;
+let stateKey = null;
 let pageStateGeneration = 0;
 const managedTimeouts = new Set();
 
@@ -325,21 +325,14 @@ async function main() {
     window.ylcEnhancerLoaded = true;
 
     try {
-        currentTabId = await new Promise(resolve => {
-            chrome.runtime.sendMessage({ action: 'getTabId' }, response => {
-                resolve(response?.tabId || null);
-            });
-        });
+        stateKey = await ylcApi.resolveStateKey();
 
-        const loadedSettings = await new Promise(resolve => chrome.storage.sync.get(DEFAULTS, resolve));
+        const loadedSettings = await ylcApi.settingsGet(DEFAULTS);
         Object.assign(settings, loadedSettings);
 
-        if (currentTabId) {
-            const localData = await new Promise(resolve => chrome.storage.local.get(`tabState_${currentTabId}`, resolve));
-            const tabState = localData[`tabState_${currentTabId}`] || {};
-            if (tabState.enableInlineTranslation !== undefined) settings.enableInlineTranslation = tabState.enableInlineTranslation;
-            if (tabState.enableFlowComments !== undefined) settings.enableFlowComments = tabState.enableFlowComments;
-        }
+        const tabState = await ylcApi.readTabState(stateKey);
+        if (tabState.enableInlineTranslation !== undefined) settings.enableInlineTranslation = tabState.enableInlineTranslation;
+        if (tabState.enableFlowComments !== undefined) settings.enableFlowComments = tabState.enableFlowComments;
 
         updateNgLists();
     } catch (e) {
@@ -347,11 +340,13 @@ async function main() {
         return;
     }
 
-    chrome.storage.onChanged.addListener((changes, area) => {
+    ylcApi.onStorageChanged((changes, area) => {
         let ngListsChanged = false;
 
-        if (area === 'sync') {
+        // 設定エリアはsync不可環境ではlocalに切り替わるため、解決済みエリア名で判定する
+        if (area === ylcApi.settingsAreaName()) {
             for (const key in changes) {
+                if (ylcApi.isInternalKey(key)) continue;
                 if (key !== 'enableInlineTranslation' && key !== 'enableFlowComments') {
                     settings[key] = changes[key].newValue;
                 }
@@ -359,8 +354,8 @@ async function main() {
             }
         }
 
-        if (area === 'local' && currentTabId && changes[`tabState_${currentTabId}`]) {
-            const newTabState = changes[`tabState_${currentTabId}`].newValue || {};
+        if (area === 'local' && stateKey && changes[stateKey]) {
+            const newTabState = changes[stateKey].newValue || {};
             if (newTabState.enableInlineTranslation !== undefined) {
                 settings.enableInlineTranslation = newTabState.enableInlineTranslation;
             }

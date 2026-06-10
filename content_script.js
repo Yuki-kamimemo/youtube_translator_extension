@@ -11,7 +11,7 @@ let flowContainer = null;
 let isInitialized = false;
 let initializationRetryTimer = null;
 let hiddenChatIframe = null;
-let currentTabId = null;
+let stateKey = null;
 let settingsPanelCleanup = null;
 let hiddenChatWaitObserver = null;
 let pageStateGeneration = 0;
@@ -197,14 +197,10 @@ function createToggleButton(id, settingKey, labelPrefix, parentContainer) {
         settings[settingKey] = newValue;
         updateButton(newValue);
 
-        if (currentTabId) {
-            chrome.storage.local.get(`tabState_${currentTabId}`, (data) => {
-                const tabState = data[`tabState_${currentTabId}`] || {};
-                tabState[settingKey] = newValue;
-                chrome.storage.local.set({ [`tabState_${currentTabId}`]: tabState });
-            });
+        if (stateKey) {
+            ylcApi.updateTabState(stateKey, { [settingKey]: newValue });
         } else {
-            chrome.storage.sync.set({ [settingKey]: newValue });
+            ylcApi.settingsSet({ [settingKey]: newValue });
         }
     };
     parentContainer.appendChild(button);
@@ -220,8 +216,8 @@ function toggleSettingsPanel() {
 }
 
 function saveSettingsPanelLayout(panel) {
-    if (!panel || !chrome.runtime?.id || panel.offsetWidth <= 50 || panel.offsetHeight <= 50) return;
-    chrome.storage.local.set({
+    if (!panel || !ylcApi.hasRuntime() || panel.offsetWidth <= 50 || panel.offsetHeight <= 50) return;
+    ylcApi.localSet({
         settingsPanelLayout: {
             top: panel.offsetTop,
             left: panel.offsetLeft,
@@ -245,7 +241,8 @@ function createSettingsPanel() {
     closeButton.onclick = () => removeSettingsPanel();
     header.appendChild(closeButton);
     const iframe = document.createElement('iframe');
-    iframe.src = chrome.runtime.getURL('popup.html');
+    // popup側がタブIDを取得できない環境でも親と同じ状態キーを参照できるよう、クエリで渡す
+    iframe.src = `${ylcApi.getRuntimeUrl('popup.html')}?ylcStateKey=${encodeURIComponent(stateKey || '')}`;
     iframe.id = 'ylc-settings-iframe';
     panel.appendChild(header);
     panel.appendChild(iframe);
@@ -261,7 +258,7 @@ function createSettingsPanel() {
     };
 
     // 保存済みレイアウトを復元
-    chrome.storage.local.get('settingsPanelLayout', (data) => {
+    ylcApi.localGet('settingsPanelLayout').then((data) => {
         const layout = data.settingsPanelLayout;
         if (layout) {
             if (layout.width > 50) panel.style.width = `${layout.width}px`;
@@ -675,35 +672,31 @@ async function main() {
     window.ylcEnhancerLoaded = true;
 
     try {
-        currentTabId = await new Promise(resolve => {
-            chrome.runtime.sendMessage({ action: 'getTabId' }, response => {
-                resolve(response?.tabId || null);
-            });
-        });
+        stateKey = await ylcApi.resolveStateKey();
 
-        const loadedSettings = await new Promise(resolve => chrome.storage.sync.get(DEFAULTS, resolve));
+        const loadedSettings = await ylcApi.settingsGet(DEFAULTS);
         Object.assign(settings, loadedSettings);
 
-        if (currentTabId) {
-            const localData = await new Promise(resolve => chrome.storage.local.get(`tabState_${currentTabId}`, resolve));
-            const tabState = localData[`tabState_${currentTabId}`] || {};
-            if (tabState.enableInlineTranslation !== undefined) settings.enableInlineTranslation = tabState.enableInlineTranslation;
-            if (tabState.enableFlowComments !== undefined) settings.enableFlowComments = tabState.enableFlowComments;
-        }
+        const tabState = await ylcApi.readTabState(stateKey);
+        if (tabState.enableInlineTranslation !== undefined) settings.enableInlineTranslation = tabState.enableInlineTranslation;
+        if (tabState.enableFlowComments !== undefined) settings.enableFlowComments = tabState.enableFlowComments;
 
         updateNgLists();
+        ylcApi.cleanupStaleSessionStates();
     } catch (e) {
         console.error('[YLC Enhancer] Failed to load settings:', e);
         return;
     }
 
-    chrome.storage.onChanged.addListener((changes, area) => {
+    ylcApi.onStorageChanged((changes, area) => {
         let ngListsChanged = false;
         let uiUpdateTrans = false;
         let uiUpdateFlow = false;
 
-        if (area === 'sync') {
+        // 設定エリアはsync不可環境ではlocalに切り替わるため、解決済みエリア名で判定する
+        if (area === ylcApi.settingsAreaName()) {
             for (let key in changes) {
+                if (ylcApi.isInternalKey(key)) continue;
                 if (key !== 'enableInlineTranslation' && key !== 'enableFlowComments') {
                     settings[key] = changes[key].newValue;
                 }
@@ -711,8 +704,8 @@ async function main() {
             }
         }
 
-        if (area === 'local' && currentTabId && changes[`tabState_${currentTabId}`]) {
-            const newTabState = changes[`tabState_${currentTabId}`].newValue || {};
+        if (area === 'local' && stateKey && changes[stateKey]) {
+            const newTabState = changes[stateKey].newValue || {};
             if (newTabState.enableInlineTranslation !== undefined && settings.enableInlineTranslation !== newTabState.enableInlineTranslation) {
                 settings.enableInlineTranslation = newTabState.enableInlineTranslation;
                 uiUpdateTrans = true;

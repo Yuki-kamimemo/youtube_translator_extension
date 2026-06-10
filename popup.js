@@ -69,7 +69,12 @@ document.addEventListener('DOMContentLoaded', () => {
         profiles: {},
     };
 
-    let currentTabId = null;
+    // 親ページ（content script）が解決した状態キーをクエリで受け取る。
+    // タブIDが取れない環境でも親と同じキーを参照するための仕組み
+    const urlStateKey = (() => {
+        try { return new URLSearchParams(location.search).get('ylcStateKey') || null; } catch { return null; }
+    })();
+    let currentStateKey = null;
     let latestLmstudioModelRequestId = 0;
     let cachedLmstudioModels = [];
     
@@ -126,10 +131,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        chrome.storage.sync.set(syncState);
-        
-        if (currentTabId) {
-            chrome.storage.local.set({ [`tabState_${currentTabId}`]: tabState });
+        ylcApi.settingsSet(syncState);
+
+        if (currentStateKey) {
+            ylcApi.updateTabState(currentStateKey, tabState);
         }
     }
 
@@ -216,17 +221,18 @@ document.addEventListener('DOMContentLoaded', () => {
         setLmstudioModelsStatus('モデル一覧を取得中...');
         if (elements.refreshLmstudioModelsBtn) elements.refreshLmstudioModelsBtn.disabled = true;
 
-        chrome.runtime.sendMessage({ action: 'lmstudioListModels' }, (res) => {
+        ylcApi.sendMessage({ action: 'lmstudioListModels' }).then((messageResult) => {
             if (requestId !== latestLmstudioModelRequestId) return;
             if (elements.refreshLmstudioModelsBtn) elements.refreshLmstudioModelsBtn.disabled = false;
 
-            if (chrome.runtime.lastError) {
+            if (!messageResult.ok) {
                 cachedLmstudioModels = [];
-                setLmstudioModelOptions([], currentValue, `エラー: ${chrome.runtime.lastError.message}`);
-                setLmstudioModelsStatus(`エラー: ${chrome.runtime.lastError.message}`, '#f44336');
+                setLmstudioModelOptions([], currentValue, `エラー: ${messageResult.reason}`);
+                setLmstudioModelsStatus(`エラー: ${messageResult.reason}`, '#f44336');
                 return;
             }
 
+            const res = messageResult.data;
             if (res?.ok) {
                 const models = res.models || [];
                 cachedLmstudioModels = models;
@@ -260,10 +266,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const name = elements.profileName.value.trim();
         if (!name) { alert('プロファイル名を入力してください。'); return; }
 
-        chrome.storage.sync.get('profiles', (data) => {
+        ylcApi.settingsGet('profiles').then((data) => {
             const profiles = data.profiles || {};
             profiles[name] = getSettingsFromForm();
-            chrome.storage.sync.set({ profiles }, () => {
+            ylcApi.settingsSet({ profiles }).then(() => {
                 alert(`「${name}」を保存しました。`);
                 populateProfiles(profiles);
             });
@@ -272,7 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     elements.loadProfileBtn.addEventListener('click', () => {
         const name = elements.profileSelector.value;
-        chrome.storage.sync.get('profiles', (data) => {
+        ylcApi.settingsGet('profiles').then((data) => {
             if (data.profiles && data.profiles[name]) {
                 loadSettings(data.profiles[name]);
                 saveSettingsNow();
@@ -285,12 +291,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const name = elements.profileName.value.trim();
         if (!name) { alert('削除するプロファイルの名前を入力してください。'); return; }
 
-        chrome.storage.sync.get('profiles', (data) => {
+        ylcApi.settingsGet('profiles').then((data) => {
             const profiles = data.profiles || {};
             if (profiles[name]) {
                 if (confirm(`プロファイル「${name}」を本当に削除しますか？`)) {
                     delete profiles[name];
-                    chrome.storage.sync.set({ profiles }, () => {
+                    ylcApi.settingsSet({ profiles }).then(() => {
                         alert(`「${name}」を削除しました。`);
                         populateProfiles(profiles);
                         elements.profileName.value = '';
@@ -323,10 +329,10 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleLmstudioConfig(selected);
         if (selected !== 'lmstudio') {
             const model = elements.lmstudioModel.value.trim();
-            chrome.runtime.sendMessage({ action: 'lmstudioSetActive', active: false, model });
+            ylcApi.sendMessage({ action: 'lmstudioSetActive', active: false, model });
             if (elements.lmstudioModelActive) elements.lmstudioModelActive.checked = false;
             updateLmstudioStatusDisplay(false);
-            chrome.storage.sync.set({ lmstudioModelActive: false });
+            ylcApi.settingsSet({ lmstudioModelActive: false });
         } else {
             refreshLmstudioModels();
         }
@@ -341,18 +347,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (status) status.textContent = active ? '起動中...' : '停止中...';
             
-            chrome.runtime.sendMessage({
+            ylcApi.sendMessage({
                 action: 'lmstudioSetActive', active, model
-            }, (res) => {
+            }).then((messageResult) => {
+                const res = messageResult.ok ? messageResult.data : null;
                 if (res?.ok) {
                     updateLmstudioStatusDisplay(active);
                 } else {
                     if (status) {
-                        status.textContent = `エラー: ${res?.error || '接続失敗'}`;
+                        status.textContent = `エラー: ${res?.error || messageResult.reason || '接続失敗'}`;
                         status.style.color = '#f44336';
                     }
                     e.target.checked = false;
-                    chrome.storage.sync.set({ lmstudioModelActive: false });
+                    ylcApi.settingsSet({ lmstudioModelActive: false });
                 }
             });
             debouncedSaveSettings();
@@ -365,11 +372,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    chrome.storage.onChanged.addListener((changes, area) => {
+    ylcApi.onStorageChanged((changes, area) => {
         if (area !== 'sync' && area !== 'local') return;
 
-        if (area === 'local' && currentTabId && changes[`tabState_${currentTabId}`]) {
-            const newTabState = changes[`tabState_${currentTabId}`].newValue || {};
+        if (area === 'local' && currentStateKey && changes[currentStateKey]) {
+            const newTabState = changes[currentStateKey].newValue || {};
             if (elements.enableInlineTranslation && newTabState.enableInlineTranslation !== undefined) {
                 elements.enableInlineTranslation.checked = newTabState.enableInlineTranslation;
             }
@@ -378,9 +385,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (area === 'sync') {
+        // 設定エリアはsync不可環境ではlocalに切り替わるため、解決済みエリア名で判定する
+        if (area === ylcApi.settingsAreaName()) {
             for (let [key, { newValue }] of Object.entries(changes)) {
                 if (key === 'enableInlineTranslation' || key === 'enableFlowComments') continue;
+                if (ylcApi.isInternalKey(key)) continue;
                 const element = elements[key];
                 if (element) {
                     if (element.type === 'checkbox') {
@@ -404,21 +413,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    chrome.runtime.sendMessage({ action: 'getTabId' }, (response) => {
-        currentTabId = response?.tabId || null;
-        
-        chrome.storage.sync.get(defaults, (syncSettings) => {
-            if (currentTabId) {
-                chrome.storage.local.get(`tabState_${currentTabId}`, (localData) => {
-                    const tabState = localData[`tabState_${currentTabId}`] || {};
-                    const finalSettings = { ...syncSettings, ...tabState };
-                    loadSettings(finalSettings);
-                    populateProfiles(syncSettings.profiles);
-                });
-            } else {
-                loadSettings(syncSettings);
-                populateProfiles(syncSettings.profiles);
-            }
-        });
-    });
+    (async () => {
+        currentStateKey = await ylcApi.resolveStateKey(urlStateKey);
+
+        const storedSettings = await ylcApi.settingsGet(defaults);
+        const tabState = await ylcApi.readTabState(currentStateKey);
+        const { updatedAt, ...tabStateValues } = tabState;
+        loadSettings({ ...storedSettings, ...tabStateValues });
+        populateProfiles(storedSettings.profiles);
+    })();
 });

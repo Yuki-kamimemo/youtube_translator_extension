@@ -215,26 +215,43 @@ function cleanupLmstudioTranslation(output, sourceText = '') {
     return isUsableTranslation(text) ? text : '';
 }
 
-// タブが閉じられたらタブ固有の設定をクリア
-chrome.tabs.onRemoved.addListener((tabId) => {
-    chrome.storage.local.remove(`tabState_${tabId}`);
-});
-
-// キャッシュクリーンアップ
-chrome.runtime.onInstalled.addListener(() => {
-    chrome.alarms.create('cleanupCache', { periodInMinutes: 1 });
-});
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'cleanupCache') {
-        const now = Date.now();
-        for (const [key, value] of translationCache.entries()) {
-            if (now - value.timestamp > CACHE_TTL) {
-                translationCache.delete(key);
-            }
+function purgeExpiredCacheEntries() {
+    const now = Date.now();
+    for (const [key, value] of translationCache.entries()) {
+        if (now - value.timestamp > CACHE_TTL) {
+            translationCache.delete(key);
         }
     }
-});
+}
+
+// タブが閉じられたらタブ固有の設定をクリア（tabs API未対応環境ではスキップ。
+// その場合の残留はextension_api.js側のTTL掃除が拾う）
+try {
+    chrome.tabs?.onRemoved?.addListener((tabId) => {
+        chrome.storage.local.remove(`tabState_${tabId}`);
+    });
+} catch (e) { /* tabs API未対応環境 */ }
+
+// キャッシュクリーンアップ（alarms未対応環境では翻訳リクエスト時の間引きのみで運用）
+try {
+    chrome.runtime.onInstalled.addListener(() => {
+        try {
+            chrome.alarms?.create('cleanupCache', { periodInMinutes: 1 });
+        } catch (e) { /* alarms未対応環境 */ }
+    });
+    chrome.alarms?.onAlarm?.addListener((alarm) => {
+        if (alarm.name === 'cleanupCache') purgeExpiredCacheEntries();
+    });
+} catch (e) { /* alarms未対応環境 */ }
+
+// alarmsが動かない環境向けの保険: 翻訳リクエスト処理時に60秒間隔で期限切れを間引く
+let lastCachePurgeAt = 0;
+function purgeExpiredCacheThrottled() {
+    const now = Date.now();
+    if (now - lastCachePurgeAt < 60 * 1000) return;
+    lastCachePurgeAt = now;
+    purgeExpiredCacheEntries();
+}
 
 let slangMap = null;
 let slangMapPromise = null;
@@ -530,7 +547,7 @@ async function warmupLmstudioModel(model) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
         if (request.action === 'toggleSettingsPanel') {
-            if (sender.tab?.id) chrome.tabs.sendMessage(sender.tab.id, { action: 'toggleSettingsPanel' });
+            if (sender.tab?.id) chrome.tabs?.sendMessage(sender.tab.id, { action: 'toggleSettingsPanel' });
             sendResponse({ ok: true });
             return;
         }
@@ -539,7 +556,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             return;
         }
         if (request.type === 'FLOW_COMMENT_DATA') {
-            if (sender.tab?.id) chrome.tabs.sendMessage(sender.tab.id, request);
+            if (sender.tab?.id) chrome.tabs?.sendMessage(sender.tab.id, request);
             sendResponse({ ok: true });
             return;
         }
@@ -581,6 +598,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === "translate") {
             const text = request.text;
             if (!text) { sendResponse({ error: 'No text' }); return; }
+            purgeExpiredCacheThrottled();
             const settings = normalizeSettings(await new Promise(r => chrome.storage.sync.get(SETTINGS_DEFAULTS, r)));
             const useLmstudio = settings.translator === 'lmstudio' && settings.lmstudioModelActive === true;
             const usedTranslator = useLmstudio ? 'lmstudio' : 'google';
@@ -609,8 +627,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; 
 });
 
-chrome.action.onClicked.addListener((tab) => {
-  if (tab.url && tab.url.includes("youtube.com/watch")) {
-    chrome.tabs.sendMessage(tab.id, { action: "toggleSettingsPanel" });
-  }
-});
+try {
+    chrome.action?.onClicked?.addListener((tab) => {
+        if (tab.url && tab.url.includes("youtube.com/watch")) {
+            chrome.tabs?.sendMessage(tab.id, { action: "toggleSettingsPanel" });
+        }
+    });
+} catch (e) { /* action API未対応環境 */ }
