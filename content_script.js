@@ -12,6 +12,10 @@ let isInitialized = false;
 let initializationRetryTimer = null;
 let hiddenChatIframe = null;
 let stateKey = null;
+// live_chat iframe内のchat_observer.jsが動いているか（YLC_OBSERVER_READY受信で確定）。
+// Orion iOS等、iframeへcontent scriptが注入されない環境では親ページから直接監視する
+let chatObserverScriptReady = false;
+let directChatObservation = false;
 let settingsPanelCleanup = null;
 let hiddenChatWaitObserver = null;
 let pageStateGeneration = 0;
@@ -392,10 +396,12 @@ function processNewCommentNode(node) {
         return;
     }
 
+    // 直接監視モード（このスクリプト自身がwatchページで動いている）では
+    // メッセージングを介さず直接フロー描画へ渡す
     const sendToFlow = (translatedText = '') => {
         if (settings.enableFlowComments) {
             comment.translated = translatedText;
-            ylcApi.sendMessage({ type: 'FLOW_COMMENT_DATA', data: comment });
+            handleFlowCommentData(comment);
         }
     };
 
@@ -536,8 +542,23 @@ function setupHiddenChat() {
 
 let hiddenChatIframeFailed = false;
 
+// iframe内スクリプトの起動を待つ猶予。これを過ぎたら親ページからの直接監視へ切り替える
+const OBSERVER_READY_GRACE_MS = 6000;
+
+function resetChatObservationState() {
+    chatObserverScriptReady = false;
+    if (directChatObservation) {
+        if (chatObserver) {
+            chatObserver.disconnect();
+            chatObserver = null;
+        }
+        directChatObservation = false;
+    }
+}
+
 function createHiddenIframe(videoId) {
     if (document.getElementById('ylc-enhancer-hidden-chat')) return;
+    resetChatObservationState();
     try {
         hiddenChatIframe = document.createElement('iframe');
         hiddenChatIframe.id = 'ylc-enhancer-hidden-chat';
@@ -551,14 +572,65 @@ function createHiddenIframe(videoId) {
         hiddenChatIframe.style.zIndex = '-9999';
         hiddenChatIframe.style.left = '-9999px';
         hiddenChatIframe.style.top = '0px';
+        hiddenChatIframe.addEventListener('load', () => {
+            setManagedTimeout(() => {
+                if (!chatObserverScriptReady) startDirectChatObservation();
+            }, OBSERVER_READY_GRACE_MS);
+        });
         document.body.appendChild(hiddenChatIframe);
         hiddenChatIframeFailed = false;
     } catch (e) {
-        // iframe作成不可の環境ではフローコメントを縮退（可視チャットiframeがあれば
-        // そちらのchat_observerが引き続きデータを送るため、完全停止とは限らない）
+        // iframe作成不可の環境では、可視チャットiframeの直接監視を試みた上で縮退する
         hiddenChatIframe = null;
         hiddenChatIframeFailed = true;
-        console.warn('[YLC Enhancer] hidden live_chat iframeを作成できないため、フローコメントを縮退します:', e);
+        console.warn('[YLC Enhancer] hidden live_chat iframeを作成できません。可視チャットの直接監視を試みます:', e);
+        setManagedTimeout(() => {
+            if (!chatObserverScriptReady) startDirectChatObservation();
+        }, OBSERVER_READY_GRACE_MS);
+    }
+}
+
+/**
+ * live_chat iframeにchat_observer.jsが注入されない環境（Orion iOS等）向けの
+ * フォールバック。same-originのチャットiframe DOMをwatchページ側から直接監視する。
+ * iframe側スクリプトの起動が後から確認できた場合は二重処理を避けるため停止する。
+ */
+async function startDirectChatObservation() {
+    if (chatObserverScriptReady || directChatObservation) return;
+    const iframe = hiddenChatIframe || document.querySelector('ytd-live-chat-frame iframe#chatframe');
+    if (!iframe) return;
+    let iframeDoc = null;
+    try {
+        iframeDoc = iframe.contentDocument;
+    } catch (e) {
+        iframeDoc = null;
+    }
+    // m.youtube.com親などcross-originの場合はアクセス不可 → 縮退のまま
+    if (!iframeDoc) return;
+
+    directChatObservation = true;
+    const generation = pageStateGeneration;
+    try {
+        const chatApp = await waitForElement('yt-live-chat-app', iframeDoc);
+        if (generation !== pageStateGeneration || chatObserverScriptReady || !directChatObservation) return;
+        const items = await waitForElement('#items.yt-live-chat-item-list-renderer', chatApp);
+        if (generation !== pageStateGeneration || chatObserverScriptReady || !directChatObservation) return;
+        startChatObserver(items);
+        console.info('[YLC Enhancer] live_chat iframe内スクリプトを確認できないため、親ページから直接監視します');
+    } catch (e) {
+        directChatObservation = false;
+    }
+}
+
+/** iframe内のchat_observer.jsが生きていると確認できたら直接監視は止める */
+function handleObserverReady() {
+    chatObserverScriptReady = true;
+    if (directChatObservation) {
+        if (chatObserver) {
+            chatObserver.disconnect();
+            chatObserver = null;
+        }
+        directChatObservation = false;
     }
 }
 
@@ -582,6 +654,7 @@ function removeSettingsPanel() {
 
 function cleanupWhenLeavingWatch() {
     pageStateGeneration++;
+    resetChatObservationState();
     if (chatObserver) {
         chatObserver.disconnect();
         chatObserver = null;
@@ -763,6 +836,7 @@ async function respondDiagnostics(requestId) {
         data: {
             hiddenChatIframePresent: !!document.getElementById('ylc-enhancer-hidden-chat'),
             hiddenChatIframeFailed,
+            chatWatchMode: chatObserverScriptReady ? 'iframe-script' : (directChatObservation ? 'direct' : 'none'),
             stateKey,
             directGoogleTranslateOk: !!directTranslation?.translation,
             directGoogleTranslateDetail: directTranslation?.translation
@@ -914,6 +988,7 @@ async function main() {
             if (message.type === 'FLOW_COMMENT_DATA') { handleFlowCommentData(message.data); }
             else if (message.type === 'YLC_SETTINGS_SAVED') { applySettingsUpdate(message.settings, message.tabState); }
             else if (message.type === 'YLC_CLOSE_SETTINGS_PANEL') { removeSettingsPanel(); }
+            else if (message.type === 'YLC_OBSERVER_READY') { handleObserverReady(); }
             else if (message.type === 'YLC_DIAG_REQUEST') { respondDiagnostics(message.requestId); }
         });
     }

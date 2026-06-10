@@ -514,6 +514,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     parentInfo.hiddenChatIframePresent === true,
                     parentInfo.hiddenChatIframePresent ? '作成済み'
                         : (parentInfo.hiddenChatIframeFailed ? '作成失敗（フローコメント縮退中）' : '未作成（ライブチャットなし？）'));
+                const watchModeLabels = {
+                    'iframe-script': 'iframe内スクリプト（通常）',
+                    'direct': '親ページから直接監視（フォールバック）',
+                    'none': '未監視',
+                };
+                add('チャット監視', parentInfo.chatWatchMode !== 'none',
+                    watchModeLabels[parentInfo.chatWatchMode] || String(parentInfo.chatWatchMode || '不明'));
                 add('Google翻訳（content script直接fetch）',
                     parentInfo.directGoogleTranslateOk === true,
                     parentInfo.directGoogleTranslateDetail || '');

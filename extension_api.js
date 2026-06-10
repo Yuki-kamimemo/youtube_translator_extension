@@ -240,17 +240,26 @@ var ylcApi = (() => {
     /**
      * 親フレーム（YouTubeページ）へ直接postMessageする。
      * service worker・tabs APIに依存しない弾幕/設定通知の主経路。
-     * 親がYouTubeページと確認できない場合は送らずfalseを返す（呼び出し側でbackground中継へフォールバック）。
+     * referrerが取れない環境（Orion等）では許可リストの各originを
+     * targetOriginに指定して送る。targetOrigin不一致なら配信されないため、
+     * 親がYouTube以外の場合に内容が漏れることはない。
      */
     function postToParent(message) {
-        const origin = getParentYouTubeOrigin();
-        if (!origin) return false;
         try {
-            window.parent.postMessage({ source: FRAME_MESSAGE_SOURCE, ...message }, origin);
-            return true;
+            if (window.parent === window) return false;
         } catch {
             return false;
         }
+        const referrerOrigin = getParentYouTubeOrigin();
+        const targets = referrerOrigin ? [referrerOrigin] : PARENT_ORIGIN_ALLOWLIST;
+        let sent = false;
+        for (const origin of targets) {
+            try {
+                window.parent.postMessage({ source: FRAME_MESSAGE_SOURCE, ...message }, origin);
+                sent = true;
+            } catch { /* このoriginには配信されないだけ */ }
+        }
+        return sent;
     }
 
     /** 指定iframeへ直接postMessageする（親→子方向の設定更新通知用） */

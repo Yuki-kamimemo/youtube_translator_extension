@@ -316,6 +316,8 @@ async function initializeIframe() {
         if (generation !== pageStateGeneration || !location.pathname.startsWith('/live_chat')) return;
         startChatObserver(items);
         isInitialized = true;
+        // 親ページへ監視開始を通知。届かない環境では親側が直接監視フォールバックへ移行する
+        ylcApi.postToParent({ type: 'YLC_OBSERVER_READY', stage: 'observing' });
         if (initializationRetryTimer) {
             clearInterval(initializationRetryTimer);
             initializationRetryTimer = null;
@@ -328,6 +330,9 @@ async function initializeIframe() {
 async function main() {
     if (window.ylcEnhancerLoaded) return;
     window.ylcEnhancerLoaded = true;
+
+    // スクリプトがこのiframeに注入されたことを親ページへ通知する
+    ylcApi.postToParent({ type: 'YLC_OBSERVER_READY', stage: 'loaded' });
 
     try {
         stateKey = await ylcApi.resolveStateKey();
