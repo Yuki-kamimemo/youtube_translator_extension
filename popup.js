@@ -74,6 +74,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlStateKey = (() => {
         try { return new URLSearchParams(location.search).get('ylcStateKey') || null; } catch { return null; }
     })();
+
+    // 実行文脈の判定: ページ内iframe（親=YouTubeページ）か、ツールバーポップアップ（トップレベル）か。
+    // ポップアップ文脈ではwidth指定がないと極端なサイズになるためクラスで調整する
+    const isToolbarPopup = (window.parent === window);
+    if (isToolbarPopup) {
+        document.body.classList.add('ylc-toolbar-popup');
+    }
     let currentStateKey = null;
     let latestLmstudioModelRequestId = 0;
     let cachedLmstudioModels = [];

@@ -36,6 +36,13 @@
         color: var(--text-main);
         overflow-x: hidden;
     }
+    /* ツールバーポップアップとして開かれた場合のサイズ調整（popup.jsが付与） */
+    body.ylc-toolbar-popup {
+        width: 380px;
+        min-height: 0;
+        max-height: 560px;
+        overflow-y: auto;
+    }
     .header {
         position: sticky;
         top: 0;

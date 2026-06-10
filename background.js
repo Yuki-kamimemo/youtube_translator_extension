@@ -518,6 +518,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; 
 });
 
+// default_popup設定済みの環境ではonClickedは発火しない。
+// default_popup未対応環境向けのフォールバックとして残す
 try {
     chrome.action?.onClicked?.addListener((tab) => {
         if (tab.url && tab.url.includes("youtube.com/watch")) {

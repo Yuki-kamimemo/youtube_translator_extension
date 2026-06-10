@@ -291,6 +291,23 @@ var ylcApi = (() => {
         return res.data?.tabId ?? null;
     }
 
+    /**
+     * ツールバーポップアップ文脈用。sender.tab経由のgetTabIdが効かないため
+     * tabs.queryでアクティブタブのIDを取る。content scriptではtabs APIが
+     * 存在しないためnullを返す
+     */
+    async function getActiveTabId() {
+        try {
+            if (!api?.tabs?.query) return null;
+            const tabs = hasBrowserNs
+                ? await api.tabs.query({ active: true, currentWindow: true })
+                : await new Promise(resolve => api.tabs.query({ active: true, currentWindow: true }, resolve));
+            return tabs?.[0]?.id ?? null;
+        } catch {
+            return null;
+        }
+    }
+
     function getVideoIdFromLocation() {
         try {
             const params = new URLSearchParams(window.location.search);
@@ -310,6 +327,8 @@ var ylcApi = (() => {
         if (explicitKey) return explicitKey;
         const tabId = await getTabId();
         if (tabId) return `tabState_${tabId}`;
+        const activeTabId = await getActiveTabId();
+        if (activeTabId) return `tabState_${activeTabId}`;
         const videoId = getVideoIdFromLocation();
         if (videoId) return `sessionState_${videoId}`;
         return 'globalState';
@@ -367,6 +386,7 @@ var ylcApi = (() => {
         postToFrame,
         onFrameMessage,
         getTabId,
+        getActiveTabId,
         getVideoIdFromLocation,
         resolveStateKey,
         readTabState,
