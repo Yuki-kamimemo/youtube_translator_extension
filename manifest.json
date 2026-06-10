@@ -18,6 +18,7 @@
     "background": {
         "service_worker": "background.js",
         "scripts": [
+            "translation.js",
             "background.js"
         ]
     },
@@ -73,7 +74,8 @@
             "resources": [
                 "popup.html",
                 "popup.js",
-                "extension_api.js"
+                "extension_api.js",
+                "slang_dict.json"
             ],
             "matches": [
                 "*://www.youtube.com/*",

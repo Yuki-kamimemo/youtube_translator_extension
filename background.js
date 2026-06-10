@@ -1,3 +1,10 @@
+// 共有翻訳ユーティリティ（前処理・辞書・後処理）を読み込む。
+// Chrome系service workerではimportScripts、event page型（Firefox/Orion系）では
+// manifestのbackground.scriptsで先に読み込まれるため二重読込しない
+if (typeof importScripts === 'function' && typeof preprocessForYouTubeChat === 'undefined') {
+    importScripts('translation.js');
+}
+
 const translationCache = new Map();
 const pendingTranslations = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5分
@@ -253,108 +260,8 @@ function purgeExpiredCacheThrottled() {
     purgeExpiredCacheEntries();
 }
 
-let slangMap = null;
-let slangMapPromise = null;
-let slangRegexEntries = null;
-
-function buildSlangRegexEntries(map) {
-    return Object.entries(map).map(([pattern, replacement]) => ({
-        regex: new RegExp(pattern, 'gi'),
-        replacement,
-    }));
-}
-
-async function loadSlangMap() {
-    if (slangMap) return slangMap;
-    if (!slangMapPromise) {
-        const slangDictUrl = chrome.runtime.getURL('slang_dict.json');
-        slangMapPromise = fetch(slangDictUrl)
-            .then(res => res.json())
-            .then(data => {
-                slangMap = data || {};
-                slangRegexEntries = buildSlangRegexEntries(slangMap);
-                return slangMap;
-            })
-            .catch(() => {
-                slangMap = {};
-                slangRegexEntries = [];
-                return slangMap;
-            });
-    }
-    return slangMapPromise;
-}
-
-async function preprocessForYouTubeChat(text) {
-    if (!text) return text;
-    await loadSlangMap();
-    let processed = text.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
-    processed = processed.replace(/([\p{Emoji}])([a-zA-Z0-9])/gu, '$1 $2');
-    processed = processed.replace(/([a-zA-Z0-9])([\p{Emoji}])/gu, '$1 $2');
-    processed = processed.replace(/([a-zA-Z])\1{2,}/gi, '$1$1');
-    for (const { regex, replacement } of slangRegexEntries) {
-        regex.lastIndex = 0;
-        processed = processed.replace(regex, replacement);
-    }
-    return processed;
-}
-
-let cachedDictionaryStr = null;
-let cachedRegexEntries = [];
-
-function preprocessWithDictionary(text, dictionaryStr) {
-    if (!dictionaryStr || !text) return text;
-    if (cachedDictionaryStr !== dictionaryStr) {
-        cachedDictionaryStr = dictionaryStr;
-        const lines = dictionaryStr.split('\n');
-        const entries = [];
-        for (const line of lines) {
-            const parts = line.split(',');
-            if (parts.length >= 2) {
-                const original = parts[0].trim();
-                const translated = parts.slice(1).join(',').trim();
-                if (original && translated) entries.push({ original, translated });
-            }
-        }
-        entries.sort((a, b) => b.original.length - a.original.length);
-        cachedRegexEntries = entries.map(({ original, translated }) => {
-            const escaped = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            return { regex: new RegExp(escaped, 'gi'), translated };
-        });
-    }
-    let processedText = text;
-    for (const { regex, translated } of cachedRegexEntries) {
-        regex.lastIndex = 0;
-        processedText = processedText.replace(regex, translated);
-    }
-    return processedText;
-}
-
-const JAPANESE_POSTPROCESS_RULES = [
-    [/ですね/g, 'だね'],
-    [/ですよ/g, 'だよ'],
-    [/でしょう/g, 'だろう'],
-    [/ますか\？/g, '？'],
-    [/ではありません/g, 'じゃない'],
-    [/することができません/g, 'できない'],
-    [/することができます/g, 'できる'],
-    [/てしまいました/g, 'てしまった'],
-    [/ということです/g, 'ってこと'],
-    [/かもしれません/g, 'かもしれない'],
-    [/なのです/g, 'なんだ'],
-    [/しています/g, 'してる'],
-    [/ています/g, 'てる'],
-    [/ありません/g, 'ない'],
-];
-
-function postprocessJapanese(translationObj) {
-    if (!translationObj || !translationObj.translation) return translationObj;
-    let text = translationObj.translation;
-    for (const [regex, replacement] of JAPANESE_POSTPROCESS_RULES) {
-        text = text.replace(regex, replacement);
-    }
-    translationObj.translation = text;
-    return translationObj;
-}
+// preprocessForYouTubeChat / preprocessWithDictionary / postprocessJapanese \u306F
+// translation.js\uFF08\u5171\u6709\uFF09\u3067\u5B9A\u7FA9\u3055\u308C\u308B
 
 async function translateWithGoogle(text) {
     try {
