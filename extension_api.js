@@ -21,7 +21,10 @@ var ylcApi = (() => {
     const STATE_TTL = 12 * 60 * 60 * 1000;
 
     function hasRuntime() {
-        try { return !!api?.runtime?.id; } catch { return false; }
+        // runtime.idでの判定はOrion等でidが未実装の場合に誤って不可と判定するため、
+        // sendMessageの存在で判定する。コンテキスト無効化による呼び出し失敗は
+        // sendMessage側のtry/catchとlastError処理で吸収される
+        try { return typeof api?.runtime?.sendMessage === 'function'; } catch { return false; }
     }
 
     /**

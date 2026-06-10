@@ -22,7 +22,10 @@
     * { box-sizing: border-box; }
     html {
         min-height: 100%;
-        background-color: var(--bg-color);
+        background-color: var(--bg-color, #101114);
+        /* 既にダークテーマであることをブラウザへ宣言し、
+           Orion等の強制ダークモードによる色の改変を避ける */
+        color-scheme: dark;
     }
     body {
         width: 100%;
@@ -31,8 +34,8 @@
         margin: 0;
         padding: 0;
         font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-        background-color: var(--bg-color);
-        color: var(--text-main);
+        background-color: var(--bg-color, #101114);
+        color: var(--text-main, #f4f7f8);
         overflow-x: hidden;
     }
     .diagnostics-list {
@@ -44,11 +47,11 @@
     }
     .diagnostics-list li {
         padding: 4px 0;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--border, #303743);
     }
     .diag-ok { color: #4caf50; font-weight: bold; }
-    .diag-ng { color: var(--danger); font-weight: bold; }
-    .diag-detail { color: var(--text-muted); }
+    .diag-ng { color: var(--danger, #ff6b6b); font-weight: bold; }
+    .diag-detail { color: var(--text-muted, #a8b0ba); }
     /* ツールバーポップアップとして開かれた場合のサイズ調整（popup.jsが付与） */
     body.ylc-toolbar-popup {
         width: 380px;
@@ -62,7 +65,7 @@
         z-index: 5;
         background-color: rgba(16, 17, 20, 0.96);
         padding: 18px 20px 14px;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--border, #303743);
         font-weight: bold;
         font-size: 17px;
         letter-spacing: 0;
@@ -76,7 +79,7 @@
         gap: 6px;
         padding: 10px 12px;
         background-color: rgba(16, 17, 20, 0.96);
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--border, #303743);
         overflow-x: auto;
         scrollbar-width: thin;
     }
@@ -88,22 +91,22 @@
         background: transparent;
         border: 1px solid transparent;
         border-radius: 999px;
-        color: var(--text-muted);
+        color: var(--text-muted, #a8b0ba);
         font-weight: 600;
         font-size: 13px;
         white-space: nowrap;
-        transition: var(--transition);
+        transition: var(--transition, 0.2s ease-in-out);
         min-height: 38px;
     }
     .tab-btn:hover {
-        color: var(--text-main);
-        background-color: var(--surface-soft);
-        border-color: var(--border);
+        color: var(--text-main, #f4f7f8);
+        background-color: var(--surface-soft, #15181d);
+        border-color: var(--border, #303743);
     }
     .tab-btn.active {
         color: #061314;
-        background-color: var(--accent);
-        border-color: var(--accent);
+        background-color: var(--accent, #4cc9c7);
+        border-color: var(--accent, #4cc9c7);
     }
     .tab-content {
         display: none;
@@ -120,9 +123,9 @@
     h4 {
         margin: 28px 0 14px 0;
         padding-top: 18px;
-        border-top: 1px solid var(--border);
+        border-top: 1px solid var(--border, #303743);
         font-size: 14px;
-        color: var(--accent);
+        color: var(--accent, #4cc9c7);
         letter-spacing: 0;
     }
     h4:first-child {
@@ -133,24 +136,24 @@
     .form-group { margin-bottom: 18px; }
     .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: end; margin-bottom: 18px; }
     .col { min-width: 0; }
-    label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+    label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--text-muted, #a8b0ba); }
     
     input[type="text"], input[type="password"], input[type="number"], select, textarea {
         width: 100%;
         padding: 11px 12px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        background-color: var(--surface);
-        color: var(--text-main);
+        border: 1px solid var(--border, #303743);
+        border-radius: var(--radius, 8px);
+        background-color: var(--surface, #20252c);
+        color: var(--text-main, #f4f7f8);
         font-family: inherit;
         font-size: 15px;
-        transition: var(--transition);
+        transition: var(--transition, 0.2s ease-in-out);
         min-height: 42px;
     }
     input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
         outline: none;
-        border-color: var(--accent);
-        box-shadow: 0 0 0 3px var(--focus-ring);
+        border-color: var(--accent, #4cc9c7);
+        box-shadow: 0 0 0 3px var(--focus-ring, rgba(76, 201, 199, 0.25));
     }
     select {
         cursor: pointer;
@@ -158,8 +161,8 @@
         -webkit-appearance: none;
         appearance: none;
         background-image:
-            linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
-            linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+            linear-gradient(45deg, transparent 50%, var(--text-muted, #a8b0ba) 50%),
+            linear-gradient(135deg, var(--text-muted, #a8b0ba) 50%, transparent 50%);
         background-position:
             calc(100% - 18px) 50%,
             calc(100% - 12px) 50%;
@@ -176,9 +179,9 @@
         width: 100%;
         height: 42px;
         padding: 2px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        background-color: var(--surface);
+        border: 1px solid var(--border, #303743);
+        border-radius: var(--radius, 8px);
+        background-color: var(--surface, #20252c);
         cursor: pointer;
     }
     
@@ -195,7 +198,7 @@
     .toggle-wrapper .toggle-label {
         margin: 0;
         font-size: 14px;
-        color: var(--text-main);
+        color: var(--text-main, #f4f7f8);
         cursor: pointer;
     }
     .toggle-switch {
@@ -211,7 +214,7 @@
         height: 0;
         /* CSSが部分適用される環境でも素のチェックボックスが見えないよう保険 */
         position: absolute;
-        accent-color: var(--accent);
+        accent-color: var(--accent, #4cc9c7);
     }
     .slider {
         position: absolute;
@@ -233,7 +236,7 @@
         border-radius: 50%;
     }
     input:checked + .slider {
-        background-color: var(--accent);
+        background-color: var(--accent, #4cc9c7);
     }
     input:checked + .slider:before {
         transform: translateX(20px);
@@ -246,7 +249,7 @@
         width: 100%;
         height: 6px;
         border-radius: 3px;
-        background: var(--surface);
+        background: var(--surface, #20252c);
         outline: none;
         padding: 0;
         border: none;
@@ -257,7 +260,7 @@
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        background: var(--accent);
+        background: var(--accent, #4cc9c7);
         cursor: pointer;
         transition: 0.2s;
     }
@@ -269,12 +272,12 @@
         display: none;
         margin-top: 14px;
         padding: 14px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        background-color: var(--surface-soft);
+        border: 1px solid var(--border, #303743);
+        border-radius: var(--radius, 8px);
+        background-color: var(--surface-soft, #15181d);
     }
-    .badge { font-weight: bold; color: var(--accent); }
-    .note { font-size: 12px; color: var(--text-muted); font-weight: normal; display: block; margin-top: 4px; }
+    .badge { font-weight: bold; color: var(--accent, #4cc9c7); }
+    .note { font-size: 12px; color: var(--text-muted, #a8b0ba); font-weight: normal; display: block; margin-top: 4px; }
     
     .profile-actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 10px; }
     .profile-actions > * { min-width: 0; }
@@ -291,26 +294,26 @@
     .full-width { width: 100%; }
     .status-text {
         min-height: 18px;
-        color: var(--text-muted);
+        color: var(--text-muted, #a8b0ba);
         font-size: 12px !important;
         line-height: 1.45;
     }
     .btn {
         padding: 10px 14px;
-        border-radius: var(--radius);
+        border-radius: var(--radius, 8px);
         border: 1px solid transparent;
-        background-color: var(--accent);
+        background-color: var(--accent, #4cc9c7);
         color: #061314;
         font-weight: bold;
         cursor: pointer;
-        transition: var(--transition);
+        transition: var(--transition, 0.2s ease-in-out);
         font-size: 14px;
         min-height: 42px;
     }
-    .btn:hover { background-color: var(--accent-hover); }
-    .btn-danger { background-color: transparent; border-color: var(--danger); color: var(--danger); }
-    .btn-danger:hover { background-color: var(--danger); color: #fff; }
-    .btn-secondary { background-color: var(--surface); border-color: var(--border); color: var(--text-main); }
+    .btn:hover { background-color: var(--accent-hover, #73ddda); }
+    .btn-danger { background-color: transparent; border-color: var(--danger, #ff6b6b); color: var(--danger, #ff6b6b); }
+    .btn-danger:hover { background-color: var(--danger, #ff6b6b); color: #fff; }
+    .btn-secondary { background-color: var(--surface, #20252c); border-color: var(--border, #303743); color: var(--text-main, #f4f7f8); }
     .btn-secondary:hover { background-color: #2a3038; }
     
     /* モバイル向け微調整 */

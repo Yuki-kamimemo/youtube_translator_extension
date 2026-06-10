@@ -165,12 +165,24 @@ async function run() {
     // 7. sendMessage正規化: runtime喪失時もrejectせず{ok:false}
     {
         const { chromeObj } = makeChromeMock();
-        chromeObj.runtime.id = undefined;
+        chromeObj.runtime.sendMessage = undefined;
         const api = loadYlcApi(chromeObj);
         const res = await api.sendMessage({ action: 'getTabId' });
         assert.strictEqual(res.ok, false);
         assert.strictEqual(res.reason, 'no-runtime');
         console.log('OK: sendMessage正規化（runtime喪失）');
+    }
+
+    // 7b. runtime.idが無くてもsendMessageが使えれば動く（Orion対策）
+    {
+        const { chromeObj } = makeChromeMock({ tabId: 5 });
+        chromeObj.runtime.id = undefined;
+        const api = loadYlcApi(chromeObj);
+        assert.strictEqual(api.hasRuntime(), true);
+        const res = await api.sendMessage({ action: 'getTabId' });
+        assert.strictEqual(res.ok, true);
+        assert.strictEqual(res.data.tabId, 5);
+        console.log('OK: runtime.id無し環境でのsendMessage');
     }
 
     // 8. 内部キー判定

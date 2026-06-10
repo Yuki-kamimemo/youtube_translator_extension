@@ -545,8 +545,14 @@ let hiddenChatIframeFailed = false;
 // iframe内スクリプトの起動を待つ猶予。これを過ぎたら親ページからの直接監視へ切り替える
 const OBSERVER_READY_GRACE_MS = 6000;
 
+let directTargetWatchTimer = null;
+
 function resetChatObservationState() {
     chatObserverScriptReady = false;
+    if (directTargetWatchTimer) {
+        clearInterval(directTargetWatchTimer);
+        directTargetWatchTimer = null;
+    }
     if (directChatObservation) {
         if (chatObserver) {
             chatObserver.disconnect();
@@ -590,6 +596,22 @@ function createHiddenIframe(videoId) {
     }
 }
 
+/** same-originでDOMへアクセスできるチャットiframeを返す。可視チャットを優先する */
+function getDirectObservationTarget() {
+    const candidates = [
+        // 可視チャットを優先: インライン翻訳の表示先がユーザーの見ているDOMになる
+        document.querySelector('ytd-live-chat-frame iframe#chatframe'),
+        hiddenChatIframe,
+    ];
+    for (const iframe of candidates) {
+        if (!iframe || !iframe.isConnected) continue;
+        try {
+            if (iframe.contentDocument) return iframe;
+        } catch (e) { /* cross-origin（m.youtube.com親など）はアクセス不可 */ }
+    }
+    return null;
+}
+
 /**
  * live_chat iframeにchat_observer.jsが注入されない環境（Orion iOS等）向けの
  * フォールバック。same-originのチャットiframe DOMをwatchページ側から直接監視する。
@@ -597,29 +619,60 @@ function createHiddenIframe(videoId) {
  */
 async function startDirectChatObservation() {
     if (chatObserverScriptReady || directChatObservation) return;
-    const iframe = hiddenChatIframe || document.querySelector('ytd-live-chat-frame iframe#chatframe');
+    const iframe = getDirectObservationTarget();
     if (!iframe) return;
-    let iframeDoc = null;
-    try {
-        iframeDoc = iframe.contentDocument;
-    } catch (e) {
-        iframeDoc = null;
-    }
-    // m.youtube.com親などcross-originの場合はアクセス不可 → 縮退のまま
-    if (!iframeDoc) return;
 
     directChatObservation = true;
     const generation = pageStateGeneration;
     try {
+        const iframeDoc = iframe.contentDocument;
         const chatApp = await waitForElement('yt-live-chat-app', iframeDoc);
         if (generation !== pageStateGeneration || chatObserverScriptReady || !directChatObservation) return;
         const items = await waitForElement('#items.yt-live-chat-item-list-renderer', chatApp);
         if (generation !== pageStateGeneration || chatObserverScriptReady || !directChatObservation) return;
         startChatObserver(items);
-        console.info('[YLC Enhancer] live_chat iframe内スクリプトを確認できないため、親ページから直接監視します');
+        watchDirectObservationTarget(iframe);
+        console.info('[YLC Enhancer] live_chat iframe内スクリプトを確認できないため、親ページから直接監視します:', iframe.id || 'chatframe');
     } catch (e) {
         directChatObservation = false;
     }
+}
+
+/**
+ * 直接監視対象の生存確認。可視チャットが閉じられた・再生成された場合は
+ * 監視をやり直し、hidden iframeしか無かった場合に可視チャットが現れたら乗り換える
+ */
+function watchDirectObservationTarget(targetIframe) {
+    if (directTargetWatchTimer) clearInterval(directTargetWatchTimer);
+    directTargetWatchTimer = setInterval(() => {
+        if (!directChatObservation || chatObserverScriptReady) {
+            clearInterval(directTargetWatchTimer);
+            directTargetWatchTimer = null;
+            return;
+        }
+        let alive = targetIframe.isConnected;
+        if (alive) {
+            try { alive = !!targetIframe.contentDocument; } catch (e) { alive = false; }
+        }
+        // hidden監視中に可視チャットが現れたら、翻訳表示先をユーザーが見るDOMへ移す
+        let betterTarget = null;
+        if (alive && targetIframe === hiddenChatIframe) {
+            const visible = document.querySelector('ytd-live-chat-frame iframe#chatframe');
+            if (visible) {
+                try { if (visible.contentDocument) betterTarget = visible; } catch (e) { /* アクセス不可なら乗り換えない */ }
+            }
+        }
+        if (alive && !betterTarget) return;
+
+        clearInterval(directTargetWatchTimer);
+        directTargetWatchTimer = null;
+        if (chatObserver) {
+            chatObserver.disconnect();
+            chatObserver = null;
+        }
+        directChatObservation = false;
+        startDirectChatObservation();
+    }, 5000);
 }
 
 /** iframe内のchat_observer.jsが生きていると確認できたら直接監視は止める */
@@ -780,8 +833,15 @@ function handleFlowCommentData(data) {
     }
 }
 
-/** popup iframeで保存された設定を即時反映し、hidden live_chat iframeへも転送する */
-function applySettingsUpdate(newSettings, tabState) {
+/**
+ * popup iframeで保存された設定を即時反映し、hidden live_chat iframeへも転送する。
+ * persist=true（popup側でstorageが使えない環境）の場合はこちらで永続化も行う
+ */
+function applySettingsUpdate(newSettings, tabState, persist = false) {
+    if (persist) {
+        if (newSettings && typeof newSettings === 'object') ylcApi.settingsSet(newSettings);
+        if (tabState && typeof tabState === 'object' && stateKey) ylcApi.updateTabState(stateKey, tabState);
+    }
     if (newSettings && typeof newSettings === 'object') {
         for (const [key, value] of Object.entries(newSettings)) {
             if (key === 'enableInlineTranslation' || key === 'enableFlowComments') continue;
@@ -816,6 +876,34 @@ function applySettingsUpdate(newSettings, tabState) {
     forwardSettingsToHiddenChat(newSettings, tabState);
 }
 
+function getSettingsIframeWindow() {
+    const settingsIframe = document.getElementById('ylc-settings-iframe');
+    return settingsIframe?.contentWindow || null;
+}
+
+function getExtensionOrigin() {
+    try { return new URL(ylcApi.getRuntimeUrl('')).origin; } catch { return null; }
+}
+
+/**
+ * popup側でchrome.storageが使えない環境（Orion iOSのページ内iframe等）向けに、
+ * 設定の読み出しを代行して返す
+ */
+async function respondSettingsRequest(requestId, defaults) {
+    const frameWindow = getSettingsIframeWindow();
+    const extensionOrigin = getExtensionOrigin();
+    if (!frameWindow || !extensionOrigin) return;
+    const safeDefaults = (defaults && typeof defaults === 'object') ? defaults : {};
+    const storedSettings = await ylcApi.settingsGet(safeDefaults);
+    const tabState = await ylcApi.readTabState(stateKey);
+    ylcApi.postToFrame(frameWindow, {
+        type: 'YLC_SETTINGS_RESPONSE',
+        requestId,
+        settings: storedSettings,
+        tabState,
+    }, extensionOrigin);
+}
+
 /** popup（診断タブ）からの問い合わせに、watchページ側でしか分からない状態を返す */
 async function respondDiagnostics(requestId) {
     let directTranslation = null;
@@ -826,11 +914,10 @@ async function respondDiagnostics(requestId) {
     } catch (e) {
         directTranslation = { error: String(e?.message || e) };
     }
-    const settingsIframe = document.getElementById('ylc-settings-iframe');
-    if (!settingsIframe?.contentWindow) return;
-    let extensionOrigin = '*';
-    try { extensionOrigin = new URL(ylcApi.getRuntimeUrl('')).origin; } catch { /* 取得不可なら送らない */ return; }
-    ylcApi.postToFrame(settingsIframe.contentWindow, {
+    const frameWindow = getSettingsIframeWindow();
+    const extensionOrigin = getExtensionOrigin();
+    if (!frameWindow || !extensionOrigin) return;
+    ylcApi.postToFrame(frameWindow, {
         type: 'YLC_DIAG_RESPONSE',
         requestId,
         data: {
@@ -986,7 +1073,8 @@ async function main() {
         // 子フレーム（hidden live_chat / popup iframe）からの直接postMessage経路
         ylcApi.onFrameMessage(message => {
             if (message.type === 'FLOW_COMMENT_DATA') { handleFlowCommentData(message.data); }
-            else if (message.type === 'YLC_SETTINGS_SAVED') { applySettingsUpdate(message.settings, message.tabState); }
+            else if (message.type === 'YLC_SETTINGS_SAVED') { applySettingsUpdate(message.settings, message.tabState, message.persist === true); }
+            else if (message.type === 'YLC_SETTINGS_REQUEST') { respondSettingsRequest(message.requestId, message.defaults); }
             else if (message.type === 'YLC_CLOSE_SETTINGS_PANEL') { removeSettingsPanel(); }
             else if (message.type === 'YLC_OBSERVER_READY') { handleObserverReady(); }
             else if (message.type === 'YLC_DIAG_REQUEST') { respondDiagnostics(message.requestId); }

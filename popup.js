@@ -82,6 +82,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.add('ylc-toolbar-popup');
     }
     let currentStateKey = null;
+    // chrome.storageが使えない環境（Orion iOSのページ内iframe等）では
+    // 設定の永続化を親ページ（content script）に代行させる
+    let persistViaParent = false;
     let latestLmstudioModelRequestId = 0;
     let cachedLmstudioModels = [];
 
@@ -148,15 +151,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        ylcApi.settingsSet(syncState);
-
-        if (currentStateKey) {
-            ylcApi.updateTabState(currentStateKey, tabState);
+        if (!persistViaParent) {
+            ylcApi.settingsSet(syncState);
+            if (currentStateKey) {
+                ylcApi.updateTabState(currentStateKey, tabState);
+            }
         }
 
         // storage.onChangedが不安定な環境向け: 親ページ（watch）へ直接通知し、
-        // 親がhidden live_chat iframeへも転送する
-        ylcApi.postToParent({ type: 'YLC_SETTINGS_SAVED', settings: syncState, tabState });
+        // 親がhidden live_chat iframeへも転送する。
+        // persist=trueの場合は親が永続化も代行する
+        ylcApi.postToParent({ type: 'YLC_SETTINGS_SAVED', settings: syncState, tabState, persist: persistViaParent });
     }
 
     const debouncedSaveSettings = debounce(saveSettingsNow, 300);
@@ -294,9 +299,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ylcApi.settingsGet('profiles').then((data) => {
             const profiles = data.profiles || {};
             profiles[name] = getSettingsFromForm();
-            ylcApi.settingsSet({ profiles }).then(() => {
-                alert(`「${name}」を保存しました。`);
-                populateProfiles(profiles);
+            ylcApi.settingsSet({ profiles }).then((saved) => {
+                if (saved && !persistViaParent) {
+                    alert(`「${name}」を保存しました。`);
+                    populateProfiles(profiles);
+                } else {
+                    alert('この環境ではプロファイルを保存できません。');
+                }
             });
         });
     });
@@ -321,10 +330,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (profiles[name]) {
                 if (confirm(`プロファイル「${name}」を本当に削除しますか？`)) {
                     delete profiles[name];
-                    ylcApi.settingsSet({ profiles }).then(() => {
-                        alert(`「${name}」を削除しました。`);
-                        populateProfiles(profiles);
-                        elements.profileName.value = '';
+                    ylcApi.settingsSet({ profiles }).then((saved) => {
+                        if (saved && !persistViaParent) {
+                            alert(`「${name}」を削除しました。`);
+                            populateProfiles(profiles);
+                            elements.profileName.value = '';
+                        } else {
+                            alert('この環境ではプロファイルを削除できません。');
+                        }
                     });
                 }
             } else {
@@ -438,30 +451,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ---- 機能診断 ----
+    // ---- 親ページ（content script）への問い合わせ ----
 
-    /** ページ内iframe文脈で、親（content script）にhidden iframe等の状態を問い合わせる */
-    function requestParentDiagnostics(timeoutMs = 4000) {
+    /** ページ内iframe文脈で親へリクエストし、対応するレスポンスを待つ */
+    function requestFromParent(requestType, responseType, payload = {}, timeoutMs = 4000) {
         return new Promise(resolve => {
             if (isToolbarPopup) { resolve(null); return; }
-            const requestId = `diag_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+            const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
             let settled = false;
             const timer = setTimeout(() => {
                 if (!settled) { settled = true; resolve(null); }
             }, timeoutMs);
             ylcApi.onFrameMessage((message) => {
-                if (settled || message.type !== 'YLC_DIAG_RESPONSE' || message.requestId !== requestId) return;
+                if (settled || message.type !== responseType || message.requestId !== requestId) return;
                 settled = true;
                 clearTimeout(timer);
-                resolve(message.data || null);
+                resolve(message);
             });
-            if (!ylcApi.postToParent({ type: 'YLC_DIAG_REQUEST', requestId })) {
+            if (!ylcApi.postToParent({ type: requestType, requestId, ...payload })) {
                 settled = true;
                 clearTimeout(timer);
                 resolve(null);
             }
         });
     }
+
+    function requestParentDiagnostics() {
+        return requestFromParent('YLC_DIAG_REQUEST', 'YLC_DIAG_RESPONSE').then(m => m?.data || null);
+    }
+
+    /** chrome.storageが使えない環境向け: 親に設定の読み出しを代行させる */
+    function requestParentSettings() {
+        const plainDefaults = {};
+        for (const [key, value] of Object.entries(defaults)) {
+            if (key !== 'profiles') plainDefaults[key] = value;
+        }
+        return requestFromParent('YLC_SETTINGS_REQUEST', 'YLC_SETTINGS_RESPONSE', { defaults: plainDefaults }, 3000);
+    }
+
+    async function probeStorageUsable() {
+        const ok = await ylcApi.localSet({ ylcDiagProbe: Date.now() });
+        if (ok) ylcApi.localRemove('ylcDiagProbe');
+        return ok;
+    }
+
+    // ---- 機能診断 ----
 
     function renderDiagnostics(items) {
         const list = document.getElementById('diagnosticsList');
@@ -505,6 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         add('LM Studio', lmstudioSupported, lmstudioSupported ? 'この環境では選択可能' : 'この環境では利用不可（iOS/iPadOS相当）');
         add('設定パネル表示方式', true, isToolbarPopup ? 'ツールバーポップアップ' : 'ページ内iframe');
+        add('設定の保存方式', true, persistViaParent ? '親ページ代行（このパネルからstorage不可）' : '直接保存');
         add('状態キー', true, currentStateKey || '(未解決)');
 
         if (!isToolbarPopup) {
@@ -548,6 +583,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     (async () => {
         currentStateKey = await ylcApi.resolveStateKey(urlStateKey);
+
+        // storageが使えない環境では親に読み出しを代行させる
+        const storageUsable = await probeStorageUsable();
+        if (!storageUsable && !isToolbarPopup) {
+            const remote = await requestParentSettings();
+            if (remote && remote.settings) {
+                persistViaParent = true;
+                const { updatedAt, ...tabStateValues } = remote.tabState || {};
+                loadSettings({ ...remote.settings, ...tabStateValues });
+                populateProfiles(remote.settings.profiles);
+                return;
+            }
+        }
 
         const storedSettings = await ylcApi.settingsGet(defaults);
         const tabState = await ylcApi.readTabState(currentStateKey);
