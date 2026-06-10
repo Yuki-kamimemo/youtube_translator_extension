@@ -16,7 +16,10 @@
         }
     },
     "background": {
-        "service_worker": "background.js"
+        "service_worker": "background.js",
+        "scripts": [
+            "background.js"
+        ]
     },
     "content_scripts": [
         {
@@ -29,6 +32,7 @@
                 "*://m.youtube.com/live_chat*"
             ],
             "js": [
+                "extension_api.js",
                 "translation.js",
                 "flow.js",
                 "content_script.js"
@@ -44,6 +48,7 @@
                 "*://m.youtube.com/live_chat*"
             ],
             "js": [
+                "extension_api.js",
                 "translation.js",
                 "chat_observer.js"
             ],
@@ -67,7 +72,8 @@
         {
             "resources": [
                 "popup.html",
-                "popup.js"
+                "popup.js",
+                "extension_api.js"
             ],
             "matches": [
                 "*://www.youtube.com/*",
