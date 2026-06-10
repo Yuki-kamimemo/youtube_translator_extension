@@ -179,12 +179,12 @@ function processNewCommentNode(node) {
     }
 
     const sendToFlow = (translatedText = '') => {
-        if (settings.enableFlowComments) {
-            comment.translated = translatedText;
-            if (chrome.runtime?.id) {
-                chrome.runtime.sendMessage({ type: 'FLOW_COMMENT_DATA', data: comment });
-            }
-        }
+        if (!settings.enableFlowComments) return;
+        comment.translated = translatedText;
+        // 親ページへ直接postMessage（service worker非依存の主経路）。
+        // 親がYouTubeページと確認できない場合のみ従来のbackground中継を使う
+        if (ylcApi.postToParent({ type: 'FLOW_COMMENT_DATA', data: comment })) return;
+        ylcApi.sendMessage({ type: 'FLOW_COMMENT_DATA', data: comment });
     };
 
     const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf]/.test(comment.text);
@@ -365,6 +365,27 @@ async function main() {
         }
 
         if (ngListsChanged) updateNgLists();
+    });
+
+    // storage.onChangedが不安定な環境向け: 親ページからの明示的な設定更新通知を受ける
+    ylcApi.onFrameMessage((message) => {
+        if (message.type !== 'YLC_SETTINGS_SAVED') return;
+        if (message.settings && typeof message.settings === 'object') {
+            for (const key in message.settings) {
+                if (key !== 'enableInlineTranslation' && key !== 'enableFlowComments') {
+                    settings[key] = message.settings[key];
+                }
+            }
+            updateNgLists();
+        }
+        if (message.tabState && typeof message.tabState === 'object') {
+            if (message.tabState.enableInlineTranslation !== undefined) {
+                settings.enableInlineTranslation = message.tabState.enableInlineTranslation;
+            }
+            if (message.tabState.enableFlowComments !== undefined) {
+                settings.enableFlowComments = message.tabState.enableFlowComments;
+            }
+        }
     });
 
     const attemptInitialization = () => {

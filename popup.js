@@ -136,6 +136,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentStateKey) {
             ylcApi.updateTabState(currentStateKey, tabState);
         }
+
+        // storage.onChangedが不安定な環境向け: 親ページ（watch）へ直接通知し、
+        // 親がhidden live_chat iframeへも転送する
+        ylcApi.postToParent({ type: 'YLC_SETTINGS_SAVED', settings: syncState, tabState });
     }
 
     const debouncedSaveSettings = debounce(saveSettingsNow, 300);

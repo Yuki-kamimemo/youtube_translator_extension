@@ -355,9 +355,7 @@ function processNewCommentNode(node) {
     const sendToFlow = (translatedText = '') => {
         if (settings.enableFlowComments) {
             comment.translated = translatedText;
-            if (chrome.runtime?.id) {
-                chrome.runtime.sendMessage({ type: 'FLOW_COMMENT_DATA', data: comment });
-            }
+            ylcApi.sendMessage({ type: 'FLOW_COMMENT_DATA', data: comment });
         }
     };
 
@@ -620,12 +618,84 @@ function markProcessed(id) {
     return true;
 }
 
-function handleFlowCommentData(data) {
-    if (!data) return;
-    if (data.id && !markProcessed(data.id)) return;
-    if (typeof flowComment === 'function') {
-        flowComment(data);
+/**
+ * 受信した弾幕データの検証。
+ * postMessage経路はページ上の任意スクリプトから到達し得るため、
+ * 型と長さを強制してから描画へ渡す（描画側のcreateSafeContentと二段構え）
+ */
+function sanitizeIncomingFlowData(data) {
+    if (!data || typeof data !== 'object') return null;
+    const str = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+    const sanitized = {
+        id: str(data.id, 256),
+        html: str(data.html, 4000),
+        text: str(data.text, 1000),
+        translated: str(data.translated, 1000),
+        authorName: str(data.authorName, 200),
+        userType: ['normal', 'member', 'moderator'].includes(data.userType) ? data.userType : 'normal',
+        specialType: ['superchat', 'membership'].includes(data.specialType) ? data.specialType : null,
+    };
+    if (sanitized.specialType === 'superchat') {
+        sanitized.purchaseAmount = str(data.purchaseAmount, 50);
+        sanitized.bgColor = str(data.bgColor, 50);
     }
+    if (!sanitized.html && !sanitized.translated) return null;
+    return sanitized;
+}
+
+function handleFlowCommentData(data) {
+    const sanitized = sanitizeIncomingFlowData(data);
+    if (!sanitized) return;
+    if (sanitized.id && !markProcessed(sanitized.id)) return;
+    if (typeof flowComment === 'function') {
+        flowComment(sanitized);
+    }
+}
+
+/** popup iframeで保存された設定を即時反映し、hidden live_chat iframeへも転送する */
+function applySettingsUpdate(newSettings, tabState) {
+    if (newSettings && typeof newSettings === 'object') {
+        for (const [key, value] of Object.entries(newSettings)) {
+            if (key === 'enableInlineTranslation' || key === 'enableFlowComments') continue;
+            settings[key] = value;
+        }
+        updateNgLists();
+        if (newSettings.overlayPosition) {
+            const overlay = document.getElementById('ylc-player-controls');
+            if (overlay) {
+                overlay.className = `ylc-player-controls ylc-pos-${newSettings.overlayPosition || 'top_right'}`;
+            }
+        }
+    }
+    if (tabState && typeof tabState === 'object') {
+        if (tabState.enableInlineTranslation !== undefined) {
+            settings.enableInlineTranslation = tabState.enableInlineTranslation;
+            const transBtn = document.getElementById('toggle-translation-btn');
+            if (transBtn) {
+                transBtn.title = `翻訳: ${settings.enableInlineTranslation ? 'オン' : 'オフ'}`;
+                transBtn.classList.toggle('enabled', settings.enableInlineTranslation);
+            }
+        }
+        if (tabState.enableFlowComments !== undefined) {
+            settings.enableFlowComments = tabState.enableFlowComments;
+            const flowBtn = document.getElementById('toggle-flow-btn');
+            if (flowBtn) {
+                flowBtn.title = `コメント表示: ${settings.enableFlowComments ? 'オン' : 'オフ'}`;
+                flowBtn.classList.toggle('enabled', settings.enableFlowComments);
+            }
+        }
+    }
+    forwardSettingsToHiddenChat(newSettings, tabState);
+}
+
+/** storage.onChangedが不安定な環境向けに、hidden iframeへ設定更新を明示的に届ける */
+function forwardSettingsToHiddenChat(newSettings, tabState) {
+    if (!hiddenChatIframe?.contentWindow) return;
+    ylcApi.postToFrame(hiddenChatIframe.contentWindow, {
+        type: 'YLC_SETTINGS_SAVED',
+        settings: newSettings || null,
+        tabState: tabState || null,
+    }, 'https://www.youtube.com');
 }
 
 async function initializeTopLevel() {
@@ -749,9 +819,17 @@ async function main() {
 
     if (!window.ylcEnhancerMessageListener) {
         window.ylcEnhancerMessageListener = true;
-        chrome.runtime.onMessage.addListener(req => {
+        // background中継経路（postMessage直結が使えない場合のフォールバック、
+        // およびツールバーアイコンからのパネル開閉）
+        ylcApi.onMessage(req => {
             if (req.type === 'FLOW_COMMENT_DATA') { handleFlowCommentData(req.data); }
             else if (req.action === 'toggleSettingsPanel') { toggleSettingsPanel(); }
+        });
+        // 子フレーム（hidden live_chat / popup iframe）からの直接postMessage経路
+        ylcApi.onFrameMessage(message => {
+            if (message.type === 'FLOW_COMMENT_DATA') { handleFlowCommentData(message.data); }
+            else if (message.type === 'YLC_SETTINGS_SAVED') { applySettingsUpdate(message.settings, message.tabState); }
+            else if (message.type === 'YLC_CLOSE_SETTINGS_PANEL') { removeSettingsPanel(); }
         });
     }
 

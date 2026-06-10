@@ -206,6 +206,69 @@ var ylcApi = (() => {
         try { await storageOp('local', 'remove', keys); return true; } catch { return false; }
     }
 
+    // ---- フレーム間直接通信（background折り返し非依存の主経路） ----
+
+    const FRAME_MESSAGE_SOURCE = 'ylc-enhancer';
+    const PARENT_ORIGIN_ALLOWLIST = ['https://www.youtube.com', 'https://m.youtube.com'];
+
+    /** 親フレームのoriginを返す。YouTube以外に埋め込まれている場合はnull */
+    function getParentYouTubeOrigin() {
+        try {
+            if (window.parent === window) return null;
+            if (document.referrer) {
+                const origin = new URL(document.referrer).origin;
+                if (PARENT_ORIGIN_ALLOWLIST.includes(origin)) return origin;
+            }
+        } catch { /* referrer不正は未対応扱い */ }
+        return null;
+    }
+
+    /**
+     * 親フレーム（YouTubeページ）へ直接postMessageする。
+     * service worker・tabs APIに依存しない弾幕/設定通知の主経路。
+     * 親がYouTubeページと確認できない場合は送らずfalseを返す（呼び出し側でbackground中継へフォールバック）。
+     */
+    function postToParent(message) {
+        const origin = getParentYouTubeOrigin();
+        if (!origin) return false;
+        try {
+            window.parent.postMessage({ source: FRAME_MESSAGE_SOURCE, ...message }, origin);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /** 指定iframeへ直接postMessageする（親→子方向の設定更新通知用） */
+    function postToFrame(frameWindow, message, targetOrigin) {
+        if (!frameWindow) return false;
+        try {
+            frameWindow.postMessage({ source: FRAME_MESSAGE_SOURCE, ...message }, targetOrigin);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * 他フレームからの拡張メッセージを受信する。
+     * 許可origin: YouTubeページ（hidden live_chat等）と拡張オリジン（popup iframe）。
+     * sourceマーカーとoriginの両方を検証する。
+     */
+    function onFrameMessage(callback) {
+        const allowedOrigins = new Set(PARENT_ORIGIN_ALLOWLIST);
+        const extensionBaseUrl = getRuntimeUrl('');
+        if (extensionBaseUrl) {
+            try { allowedOrigins.add(new URL(extensionBaseUrl).origin); } catch { /* 無効URLは無視 */ }
+        }
+        window.addEventListener('message', (event) => {
+            const data = event.data;
+            if (!data || typeof data !== 'object' || data.source !== FRAME_MESSAGE_SOURCE) return;
+            if (!allowedOrigins.has(event.origin)) return;
+            callback(data, event);
+        });
+    }
+
     // ---- タブ/セッション状態キーの解決 ----
 
     async function getTabId() {
@@ -285,6 +348,9 @@ var ylcApi = (() => {
         localGet,
         localSet,
         localRemove,
+        postToParent,
+        postToFrame,
+        onFrameMessage,
         getTabId,
         getVideoIdFromLocation,
         resolveStateKey,
