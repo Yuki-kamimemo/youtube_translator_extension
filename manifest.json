@@ -75,6 +75,7 @@
             "resources": [
                 "popup.html",
                 "popup.js",
+                "popup.css",
                 "extension_api.js",
                 "slang_dict.json"
             ],
