@@ -438,6 +438,107 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ---- 機能診断 ----
+
+    /** ページ内iframe文脈で、親（content script）にhidden iframe等の状態を問い合わせる */
+    function requestParentDiagnostics(timeoutMs = 4000) {
+        return new Promise(resolve => {
+            if (isToolbarPopup) { resolve(null); return; }
+            const requestId = `diag_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+            let settled = false;
+            const timer = setTimeout(() => {
+                if (!settled) { settled = true; resolve(null); }
+            }, timeoutMs);
+            ylcApi.onFrameMessage((message) => {
+                if (settled || message.type !== 'YLC_DIAG_RESPONSE' || message.requestId !== requestId) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve(message.data || null);
+            });
+            if (!ylcApi.postToParent({ type: 'YLC_DIAG_REQUEST', requestId })) {
+                settled = true;
+                clearTimeout(timer);
+                resolve(null);
+            }
+        });
+    }
+
+    function renderDiagnostics(items) {
+        const list = document.getElementById('diagnosticsList');
+        if (!list) return;
+        list.innerHTML = '';
+        for (const item of items) {
+            const li = document.createElement('li');
+            const status = document.createElement('span');
+            status.textContent = item.ok ? 'OK' : 'NG';
+            status.className = item.ok ? 'diag-ok' : 'diag-ng';
+            li.appendChild(status);
+            li.appendChild(document.createTextNode(` ${item.label}`));
+            if (item.detail) {
+                const detail = document.createElement('span');
+                detail.className = 'diag-detail';
+                detail.textContent = ` — ${item.detail}`;
+                li.appendChild(detail);
+            }
+            list.appendChild(li);
+        }
+    }
+
+    async function runDiagnostics() {
+        const items = [];
+        const add = (label, ok, detail = '') => items.push({ label, ok, detail });
+
+        const bg = await ylcApi.sendMessage({ action: 'getTabId' });
+        add('background通信', bg.ok, bg.ok ? '' : (bg.reason || ''));
+
+        await ylcApi.settingsGet({});
+        const areaName = ylcApi.settingsAreaName();
+        add('設定保存先', true, areaName === 'sync' ? 'sync（通常）' : 'local（フォールバック中）');
+
+        const localOk = await ylcApi.localSet({ ylcDiagProbe: Date.now() });
+        if (localOk) ylcApi.localRemove('ylcDiagProbe');
+        add('storage local', localOk);
+
+        const tr = await ylcApi.sendMessage({ action: 'translate', text: 'hello' });
+        const trOk = tr.ok && !!tr.data?.translation;
+        add('Google翻訳（background経由）', trOk, trOk ? `結果: ${tr.data.translation}` : (tr.data?.error || tr.reason || ''));
+
+        add('LM Studio', lmstudioSupported, lmstudioSupported ? 'この環境では選択可能' : 'この環境では利用不可（iOS/iPadOS相当）');
+        add('設定パネル表示方式', true, isToolbarPopup ? 'ツールバーポップアップ' : 'ページ内iframe');
+        add('状態キー', true, currentStateKey || '(未解決)');
+
+        if (!isToolbarPopup) {
+            const parentInfo = await requestParentDiagnostics();
+            if (parentInfo) {
+                add('hidden live_chat iframe',
+                    parentInfo.hiddenChatIframePresent === true,
+                    parentInfo.hiddenChatIframePresent ? '作成済み'
+                        : (parentInfo.hiddenChatIframeFailed ? '作成失敗（フローコメント縮退中）' : '未作成（ライブチャットなし？）'));
+                add('Google翻訳（content script直接fetch）',
+                    parentInfo.directGoogleTranslateOk === true,
+                    parentInfo.directGoogleTranslateDetail || '');
+            } else {
+                add('親ページ診断', false, '応答なし（postMessage経路が縮退している可能性）');
+            }
+        }
+
+        renderDiagnostics(items);
+    }
+
+    const runDiagnosticsBtn = document.getElementById('runDiagnosticsBtn');
+    if (runDiagnosticsBtn) {
+        runDiagnosticsBtn.addEventListener('click', async () => {
+            runDiagnosticsBtn.disabled = true;
+            runDiagnosticsBtn.textContent = '診断中...';
+            try {
+                await runDiagnostics();
+            } finally {
+                runDiagnosticsBtn.disabled = false;
+                runDiagnosticsBtn.textContent = '診断を実行';
+            }
+        });
+    }
+
     (async () => {
         currentStateKey = await ylcApi.resolveStateKey(urlStateKey);
 

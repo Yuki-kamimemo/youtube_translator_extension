@@ -743,6 +743,35 @@ function applySettingsUpdate(newSettings, tabState) {
     forwardSettingsToHiddenChat(newSettings, tabState);
 }
 
+/** popup（診断タブ）からの問い合わせに、watchページ側でしか分からない状態を返す */
+async function respondDiagnostics(requestId) {
+    let directTranslation = null;
+    try {
+        // content script文脈でのCORS可否を実測する（popup自身のfetchは拡張オリジンで
+        // 制約が異なるため、ここで実行した結果が実態を表す）
+        directTranslation = await translateDirectWithGoogle('hello', '');
+    } catch (e) {
+        directTranslation = { error: String(e?.message || e) };
+    }
+    const settingsIframe = document.getElementById('ylc-settings-iframe');
+    if (!settingsIframe?.contentWindow) return;
+    let extensionOrigin = '*';
+    try { extensionOrigin = new URL(ylcApi.getRuntimeUrl('')).origin; } catch { /* 取得不可なら送らない */ return; }
+    ylcApi.postToFrame(settingsIframe.contentWindow, {
+        type: 'YLC_DIAG_RESPONSE',
+        requestId,
+        data: {
+            hiddenChatIframePresent: !!document.getElementById('ylc-enhancer-hidden-chat'),
+            hiddenChatIframeFailed,
+            stateKey,
+            directGoogleTranslateOk: !!directTranslation?.translation,
+            directGoogleTranslateDetail: directTranslation?.translation
+                ? `結果: ${directTranslation.translation}`
+                : (directTranslation?.error || ''),
+        },
+    }, extensionOrigin);
+}
+
 /** storage.onChangedが不安定な環境向けに、hidden iframeへ設定更新を明示的に届ける */
 function forwardSettingsToHiddenChat(newSettings, tabState) {
     if (!hiddenChatIframe?.contentWindow) return;
@@ -885,6 +914,7 @@ async function main() {
             if (message.type === 'FLOW_COMMENT_DATA') { handleFlowCommentData(message.data); }
             else if (message.type === 'YLC_SETTINGS_SAVED') { applySettingsUpdate(message.settings, message.tabState); }
             else if (message.type === 'YLC_CLOSE_SETTINGS_PANEL') { removeSettingsPanel(); }
+            else if (message.type === 'YLC_DIAG_REQUEST') { respondDiagnostics(message.requestId); }
         });
     }
 

@@ -15,7 +15,7 @@ var ylcApi = (() => {
 
     // 拡張レイヤー内部でstorageに置くキー。設定変更の監視対象から除外する
     const INTERNAL_KEY_PREFIXES = ['tabState_', 'sessionState_'];
-    const INTERNAL_KEYS = ['globalState', 'settingsPanelLayout', 'ylcMigratedFromSync', 'ylcProbe'];
+    const INTERNAL_KEYS = ['globalState', 'settingsPanelLayout', 'ylcMigratedFromSync', 'ylcProbe', 'ylcDiagProbe'];
 
     // sessionState/tabStateの鮮度上限。tabs.onRemovedによる掃除が効かない環境での残留対策
     const STATE_TTL = 12 * 60 * 60 * 1000;

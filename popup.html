@@ -36,6 +36,20 @@
         color: var(--text-main);
         overflow-x: hidden;
     }
+    .diagnostics-list {
+        list-style: none;
+        margin: 12px 0 8px;
+        padding: 0;
+        font-size: 12.5px;
+        line-height: 1.7;
+    }
+    .diagnostics-list li {
+        padding: 4px 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .diag-ok { color: #4caf50; font-weight: bold; }
+    .diag-ng { color: var(--danger); font-weight: bold; }
+    .diag-detail { color: var(--text-muted); }
     /* ツールバーポップアップとして開かれた場合のサイズ調整（popup.jsが付与） */
     body.ylc-toolbar-popup {
         width: 380px;
@@ -317,6 +331,7 @@
         <button class="tab-btn" data-tab="tab-dictionary">単語登録</button>
         <button class="tab-btn" data-tab="tab-ng">NG設定</button>
         <button class="tab-btn" data-tab="tab-profiles">プロファイル</button>
+        <button class="tab-btn" data-tab="tab-diagnostics">診断</button>
     </div>
 
     <div id="tab-general" class="tab-content active">
@@ -485,6 +500,15 @@
         </div>
         <div class="profile-footer">
             <button id="deleteProfileBtn" class="btn btn-danger full-width">選択したプロファイルを削除</button>
+        </div>
+    </div>
+
+    <div id="tab-diagnostics" class="tab-content">
+        <h4>機能診断</h4>
+        <div class="form-group">
+            <button id="runDiagnosticsBtn" class="btn full-width">診断を実行</button>
+            <ul id="diagnosticsList" class="diagnostics-list"></ul>
+            <span class="note">※Orion等で動作しない機能がある場合、どの経路が縮退しているかを確認できます。診断はGoogle翻訳へのテストリクエストを1〜2回送信します。</span>
         </div>
     </div>
 
