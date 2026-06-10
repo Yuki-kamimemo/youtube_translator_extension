@@ -77,6 +77,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentStateKey = null;
     let latestLmstudioModelRequestId = 0;
     let cachedLmstudioModels = [];
+
+    // iOS/iPadOS相当環境ではlocalhostのLM Studioに到達できないため選択不可にする
+    const lmstudioSupported = !ylcApi.isAppleTouchEnvironment();
+    if (!lmstudioSupported && elements.translator) {
+        const lmstudioOption = elements.translator.querySelector('option[value="lmstudio"]');
+        if (lmstudioOption) {
+            lmstudioOption.disabled = true;
+            lmstudioOption.textContent += '（この環境では利用不可）';
+        }
+    }
     
     const tabs = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
@@ -147,6 +157,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function loadSettings(settings) {
         settings = normalizeSettings(settings);
         if (!['google', 'lmstudio'].includes(settings.translator)) {
+            settings.translator = 'google';
+        }
+        // LM Studio非対応環境では保存値がlmstudioでもGoogle翻訳へ矯正する
+        if (!lmstudioSupported && settings.translator === 'lmstudio') {
             settings.translator = 'google';
         }
         Object.keys(settings).filter(key => key !== 'profiles' && !key.startsWith('ollama')).forEach(key => {

@@ -133,3 +133,82 @@ function postprocessJapanese(translationObj) {
     translationObj.translation = text;
     return translationObj;
 }
+
+// ---- Google翻訳（background/content script共有） ----
+
+async function translateWithGoogle(text) {
+    try {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=${encodeURIComponent(text)}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        const translation = Array.isArray(data?.[0])
+            ? data[0].map((segment) => (Array.isArray(segment) ? segment[0] : '')).join('').trim()
+            : '';
+        if (translation) return { translation };
+        throw new Error("Invalid response");
+    } catch (error) {
+        return { error: "翻訳エラー" };
+    }
+}
+
+// ---- 翻訳失敗キャッシュ（同一コメントの連続再試行を抑制） ----
+
+const failedTranslationCache = new Map();
+const FAILED_TRANSLATION_TTL = 60 * 1000;
+const FAILED_TRANSLATION_MAX = 500;
+
+function markTranslationFailed(text) {
+    if (!text) return;
+    if (failedTranslationCache.size >= FAILED_TRANSLATION_MAX) {
+        failedTranslationCache.delete(failedTranslationCache.keys().next().value);
+    }
+    failedTranslationCache.set(text, Date.now());
+}
+
+function isRecentlyFailedTranslation(text) {
+    const failedAt = failedTranslationCache.get(text);
+    if (failedAt === undefined) return false;
+    if (Date.now() - failedAt > FAILED_TRANSLATION_TTL) {
+        failedTranslationCache.delete(text);
+        return false;
+    }
+    return true;
+}
+
+// ---- content script直接翻訳フォールバック ----
+
+const directTranslationCache = new Map();
+const DIRECT_TRANSLATION_CACHE_MAX = 300;
+
+/**
+ * background中継が使えない環境向けのGoogle翻訳直接実行。
+ * background経由と同じ前処理・辞書・後処理パイプラインを通す。
+ *
+ * 注意: MV3のcontent script fetchはページのCORS制約下にあり、
+ * translate.googleapis.comがCORSを許可しない環境では失敗する。
+ * 失敗は短期キャッシュされ連続再試行しない（Orion実機での可否は要検証）。
+ */
+async function translateDirectWithGoogle(text, dictionaryStr) {
+    if (!text) return { error: '翻訳エラー' };
+    if (isRecentlyFailedTranslation(text)) return { error: '翻訳エラー' };
+
+    const cached = directTranslationCache.get(text);
+    if (cached) return { translation: cached };
+
+    let processedText = await preprocessForYouTubeChat(text);
+    processedText = preprocessWithDictionary(processedText, dictionaryStr || '');
+
+    const result = await translateWithGoogle(processedText);
+    if (result && result.translation) {
+        postprocessJapanese(result);
+        if (directTranslationCache.size >= DIRECT_TRANSLATION_CACHE_MAX) {
+            directTranslationCache.delete(directTranslationCache.keys().next().value);
+        }
+        directTranslationCache.set(text, result.translation);
+        return result;
+    }
+
+    markTranslationFailed(text);
+    return result || { error: '翻訳エラー' };
+}

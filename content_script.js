@@ -585,19 +585,23 @@ function enqueueTranslation(text, callback) {
 function processTranslationQueue() {
     while (translationActive < MAX_CONCURRENT_TRANSLATIONS && translationQueue.length > 0) {
         const { text, callback } = translationQueue.shift();
-        translationActive++;
-        if (!chrome.runtime?.id) {
-            translationActive--;
-            callback({ error: 'Extension context lost.' });
+        // 直近で失敗したテキストは連続再試行しない
+        if (isRecentlyFailedTranslation(text)) {
+            callback({ error: '翻訳エラー' });
             continue;
         }
-        chrome.runtime.sendMessage({ action: "translate", text }, (result) => {
-            translationActive--;
-            if (chrome.runtime.lastError) {
-                callback({ error: chrome.runtime.lastError.message });
+        translationActive++;
+        ylcApi.sendMessage({ action: "translate", text }).then(async (messageResult) => {
+            let result;
+            if (messageResult.ok && messageResult.data) {
+                result = messageResult.data;
             } else {
-                callback(result);
+                // background不達時はGoogle翻訳のみcontent scriptから直接実行する
+                result = await translateDirectWithGoogle(text, settings.dictionary);
             }
+            translationActive--;
+            if (result && result.error) markTranslationFailed(text);
+            callback(result);
             if (translationQueue.length > 0) {
                 setManagedTimeout(processTranslationQueue, THROTTLE_INTERVAL);
             }

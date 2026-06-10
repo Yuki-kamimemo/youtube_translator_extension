@@ -24,6 +24,20 @@ var ylcApi = (() => {
         try { return !!api?.runtime?.id; } catch { return false; }
     }
 
+    /**
+     * iOS/iPadOS相当の環境か（Orion iOS/iPadOS等）。
+     * localhost連携（LM Studio）が実用にならない環境の判定に使う。
+     * iPadOSはMacintosh UAを名乗るためタッチ点数で判別する
+     */
+    function isAppleTouchEnvironment() {
+        try {
+            const ua = navigator.userAgent || '';
+            if (/iPhone|iPad|iPod/.test(ua)) return true;
+            if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
+        } catch { /* navigator未定義環境 */ }
+        return false;
+    }
+
     function getRuntimeUrl(path) {
         try { return api.runtime.getURL(path); } catch { return ''; }
     }
@@ -336,6 +350,7 @@ var ylcApi = (() => {
 
     return {
         hasRuntime,
+        isAppleTouchEnvironment,
         getRuntimeUrl,
         isInternalKey,
         sendMessage,

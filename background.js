@@ -260,24 +260,8 @@ function purgeExpiredCacheThrottled() {
     purgeExpiredCacheEntries();
 }
 
-// preprocessForYouTubeChat / preprocessWithDictionary / postprocessJapanese \u306F
-// translation.js\uFF08\u5171\u6709\uFF09\u3067\u5B9A\u7FA9\u3055\u308C\u308B
-
-async function translateWithGoogle(text) {
-    try {
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=${encodeURIComponent(text)}`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data = await response.json();
-        const translation = Array.isArray(data?.[0])
-            ? data[0].map((segment) => (Array.isArray(segment) ? segment[0] : '')).join('').trim()
-            : '';
-        if (translation) return { translation };
-        throw new Error("Invalid response");
-    } catch (error) {
-        return { error: "翻訳エラー" };
-    }
-}
+// preprocessForYouTubeChat / preprocessWithDictionary / postprocessJapanese /
+// translateWithGoogle は translation.js（共有）で定義される
 
 async function translateWithLmstudio(text, settings) {
     const endpoint = LMSTUDIO_ENDPOINT;
