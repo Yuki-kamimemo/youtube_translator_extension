@@ -69,6 +69,46 @@ function waitForElement(selector, parent = document, timeout = 15000) {
     });
 }
 
+// m.youtube.com等でDOM構造が異なる場合に備えたプレーヤー検出の候補。
+// 先頭から優先（#movie_playerがChrome desktopの既定）
+const PLAYER_SELECTORS = ['#movie_player', '#player-container-id', '.html5-video-player', 'ytd-player'];
+
+function findPlayerElement() {
+    for (const selector of PLAYER_SELECTORS) {
+        const el = document.querySelector(selector);
+        if (el) return el;
+    }
+    // 最後の手段: video要素からプレーヤー相当の祖先を遡る
+    const video = document.querySelector('video.html5-main-video, video');
+    if (video) {
+        return video.closest(PLAYER_SELECTORS.join(', ')) || video.parentElement;
+    }
+    return null;
+}
+
+function waitForPlayerElement(timeout = 15000) {
+    return new Promise((resolve, reject) => {
+        const found = findPlayerElement();
+        if (found) {
+            resolve(found);
+            return;
+        }
+        const observer = new MutationObserver(() => {
+            const el = findPlayerElement();
+            if (el) {
+                observer.disconnect();
+                clearTimeout(timer);
+                resolve(el);
+            }
+        });
+        const timer = setTimeout(() => {
+            observer.disconnect();
+            reject(new Error('Player element not found'));
+        }, timeout);
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+    });
+}
+
 function parseComment(node) {
     const authorEl = node.querySelector('#author-name');
     const messageEl = node.querySelector('#message');
@@ -494,21 +534,32 @@ function setupHiddenChat() {
     }
 }
 
+let hiddenChatIframeFailed = false;
+
 function createHiddenIframe(videoId) {
     if (document.getElementById('ylc-enhancer-hidden-chat')) return;
-    hiddenChatIframe = document.createElement('iframe');
-    hiddenChatIframe.id = 'ylc-enhancer-hidden-chat';
-    hiddenChatIframe.dataset.videoId = videoId;
-    hiddenChatIframe.src = `https://www.youtube.com/live_chat?v=${videoId}&is_popout=1`;
-    hiddenChatIframe.style.position = 'fixed';
-    hiddenChatIframe.style.width = '300px';
-    hiddenChatIframe.style.height = '500px';
-    hiddenChatIframe.style.opacity = '0';
-    hiddenChatIframe.style.pointerEvents = 'none';
-    hiddenChatIframe.style.zIndex = '-9999';
-    hiddenChatIframe.style.left = '-9999px';
-    hiddenChatIframe.style.top = '0px';
-    document.body.appendChild(hiddenChatIframe);
+    try {
+        hiddenChatIframe = document.createElement('iframe');
+        hiddenChatIframe.id = 'ylc-enhancer-hidden-chat';
+        hiddenChatIframe.dataset.videoId = videoId;
+        hiddenChatIframe.src = `https://www.youtube.com/live_chat?v=${videoId}&is_popout=1`;
+        hiddenChatIframe.style.position = 'fixed';
+        hiddenChatIframe.style.width = '300px';
+        hiddenChatIframe.style.height = '500px';
+        hiddenChatIframe.style.opacity = '0';
+        hiddenChatIframe.style.pointerEvents = 'none';
+        hiddenChatIframe.style.zIndex = '-9999';
+        hiddenChatIframe.style.left = '-9999px';
+        hiddenChatIframe.style.top = '0px';
+        document.body.appendChild(hiddenChatIframe);
+        hiddenChatIframeFailed = false;
+    } catch (e) {
+        // iframe作成不可の環境ではフローコメントを縮退（可視チャットiframeがあれば
+        // そちらのchat_observerが引き続きデータを送るため、完全停止とは限らない）
+        hiddenChatIframe = null;
+        hiddenChatIframeFailed = true;
+        console.warn('[YLC Enhancer] hidden live_chat iframeを作成できないため、フローコメントを縮退します:', e);
+    }
 }
 
 function removeHiddenChat() {
@@ -708,7 +759,7 @@ async function initializeTopLevel() {
     const generation = pageStateGeneration;
 
     try {
-        const player = await waitForElement('#movie_player');
+        const player = await waitForPlayerElement();
         if (generation !== pageStateGeneration || !location.pathname.startsWith('/watch')) return;
         if (player && !document.getElementById('yt-flow-comment-container')) {
             flowContainer = document.createElement('div');
@@ -837,19 +888,28 @@ async function main() {
         });
     }
 
+    let lastNavigationHref = location.href;
+    const handleNavigation = () => {
+        lastNavigationHref = location.href;
+        if (!location.pathname.startsWith('/watch')) {
+            cleanupWhenLeavingWatch();
+            return;
+        }
+        pageStateGeneration++;
+        isInitialized = false;
+        if (initializationRetryTimer) clearInterval(initializationRetryTimer);
+        initializationRetryTimer = setInterval(attemptInitialization, 2000);
+        setupHiddenChat();
+    };
+
     if (!window.ylcNavigateListener) {
         window.ylcNavigateListener = true;
-        document.body.addEventListener('yt-navigate-finish', () => {
-            if (!location.pathname.startsWith('/watch')) {
-                cleanupWhenLeavingWatch();
-                return;
-            }
-            pageStateGeneration++;
-            isInitialized = false;
-            if (initializationRetryTimer) clearInterval(initializationRetryTimer);
-            initializationRetryTimer = setInterval(attemptInitialization, 2000);
-            setupHiddenChat();
-        });
+        document.body.addEventListener('yt-navigate-finish', handleNavigation);
+        // yt-navigate-finishが発火しない環境（m.youtube.com等）向けのURL変化監視。
+        // イベントが先に処理した場合はhrefが一致するため二重実行されない
+        setInterval(() => {
+            if (location.href !== lastNavigationHref) handleNavigation();
+        }, 1000);
     }
     setupHiddenChat();
 
