@@ -275,9 +275,28 @@ function saveSettingsPanelLayout(panel) {
 
 function createSettingsPanel() {
     if (document.getElementById('ylc-settings-panel')) return;
+    const backdrop = document.createElement('div');
+    backdrop.id = 'ylc-settings-backdrop';
+    const blockBehindPageTap = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    };
+    backdrop.addEventListener('pointerdown', blockBehindPageTap);
+    backdrop.addEventListener('touchstart', blockBehindPageTap, { passive: false });
+    backdrop.addEventListener('touchmove', blockBehindPageTap, { passive: false });
+    backdrop.addEventListener('click', blockBehindPageTap);
+
     const panel = document.createElement('div');
     panel.id = 'ylc-settings-panel';
     panel.style.display = 'flex';
+    const stopPanelEventPropagation = (event) => {
+        event.stopPropagation();
+    };
+    panel.addEventListener('pointerdown', stopPanelEventPropagation, true);
+    panel.addEventListener('touchstart', stopPanelEventPropagation, { capture: true, passive: true });
+    panel.addEventListener('touchmove', stopPanelEventPropagation, { capture: true, passive: true });
+    panel.addEventListener('click', stopPanelEventPropagation, true);
+
     const header = document.createElement('div');
     header.id = 'ylc-settings-header';
     header.textContent = 'チャット翻訳・表示設定';
@@ -292,6 +311,7 @@ function createSettingsPanel() {
     iframe.id = 'ylc-settings-iframe';
     panel.appendChild(header);
     panel.appendChild(iframe);
+    document.body.appendChild(backdrop);
     document.body.appendChild(panel);
 
     // レイアウト保存用デバウンス
@@ -382,6 +402,7 @@ function createSettingsPanel() {
         document.removeEventListener('touchmove', onTouchMove);
         document.removeEventListener('mouseup', endDrag);
         document.removeEventListener('touchend', endDrag);
+        backdrop.remove();
         settingsPanelCleanup = null;
     };
 }
@@ -758,6 +779,7 @@ function removeSettingsPanel() {
     if (panel) saveSettingsPanelLayout(panel);
     if (settingsPanelCleanup) settingsPanelCleanup();
     if (panel) panel.remove();
+    document.getElementById('ylc-settings-backdrop')?.remove();
 }
 
 function cleanupWhenLeavingWatch() {
