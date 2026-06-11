@@ -195,8 +195,8 @@ html[dark] #ylc-settings-panel {
         border-radius: 14px 14px 0 0;
         resize: none;
         box-shadow: 0 -12px 36px rgba(0,0,0,0.45);
-        /* モバイルではスクロールとの干渉を防ぐため固定 */
-        touch-action: none; 
+        /* iframe内のフォーム操作を親パネル側で奪わない */
+        touch-action: auto;
     }
     
     #ylc-settings-header {
@@ -267,6 +267,8 @@ html[dark] #ylc-settings-close-btn {
     border: none;
     width: 100%;
     background-color: #101114;
+    pointer-events: auto;
+    touch-action: manipulation;
 }
 
 /* --- フローコメント内の画像（絵文字・スタンプ等）のサイズ調整 --- */
