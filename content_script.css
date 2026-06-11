@@ -169,6 +169,7 @@
     color: #f4f7f8;
     pointer-events: auto;
     isolation: isolate;
+    overscroll-behavior: contain;
 }
 
 html[dark] #ylc-settings-panel {
@@ -284,6 +285,7 @@ html[dark] #ylc-settings-close-btn {
     background-color: #101114;
     pointer-events: auto;
     touch-action: manipulation;
+    overscroll-behavior: contain;
 }
 
 /* --- フローコメント内の画像（絵文字・スタンプ等）のサイズ調整 --- */

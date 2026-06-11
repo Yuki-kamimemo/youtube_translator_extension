@@ -18,6 +18,7 @@ let stateKey = null;
 let chatObserverScriptReady = false;
 let directChatObservation = false;
 let settingsPanelCleanup = null;
+let settingsPanelScrollLock = null;
 let hiddenChatWaitObserver = null;
 let chatFrameAttrObserver = null;
 let pageStateGeneration = 0;
@@ -255,9 +256,26 @@ function createToggleButton(id, settingKey, labelPrefix, parentContainer) {
 function toggleSettingsPanel() {
     const panel = document.getElementById('ylc-settings-panel');
     if (!panel) {
+        if (shouldOpenSettingsAsTopLevelPage() && openSettingsAsTopLevelPage()) return;
         createSettingsPanel();
     } else {
         removeSettingsPanel();
+    }
+}
+
+function shouldOpenSettingsAsTopLevelPage() {
+    const coarsePointer = typeof window.matchMedia === 'function' &&
+        window.matchMedia('(pointer: coarse)').matches;
+    return window.innerWidth <= 768 && coarsePointer;
+}
+
+function openSettingsAsTopLevelPage() {
+    const url = `${ylcApi.getRuntimeUrl('popup.html')}?ylcStateKey=${encodeURIComponent(stateKey || '')}`;
+    try {
+        const opened = window.open(url, '_blank', 'noopener');
+        return !!opened;
+    } catch (e) {
+        return false;
     }
 }
 
@@ -273,8 +291,45 @@ function saveSettingsPanelLayout(panel) {
     });
 }
 
+function lockPageScrollForSettingsPanel() {
+    if (settingsPanelScrollLock) return;
+    settingsPanelScrollLock = {
+        scrollX: window.scrollX || window.pageXOffset || 0,
+        scrollY: window.scrollY || window.pageYOffset || 0,
+        htmlOverflow: document.documentElement.style.overflow,
+        bodyOverflow: document.body.style.overflow,
+        bodyPosition: document.body.style.position,
+        bodyTop: document.body.style.top,
+        bodyLeft: document.body.style.left,
+        bodyWidth: document.body.style.width,
+        bodyTouchAction: document.body.style.touchAction,
+    };
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${settingsPanelScrollLock.scrollY}px`;
+    document.body.style.left = `-${settingsPanelScrollLock.scrollX}px`;
+    document.body.style.width = '100%';
+    document.body.style.touchAction = 'none';
+}
+
+function unlockPageScrollForSettingsPanel() {
+    if (!settingsPanelScrollLock) return;
+    const lock = settingsPanelScrollLock;
+    settingsPanelScrollLock = null;
+    document.documentElement.style.overflow = lock.htmlOverflow;
+    document.body.style.overflow = lock.bodyOverflow;
+    document.body.style.position = lock.bodyPosition;
+    document.body.style.top = lock.bodyTop;
+    document.body.style.left = lock.bodyLeft;
+    document.body.style.width = lock.bodyWidth;
+    document.body.style.touchAction = lock.bodyTouchAction;
+    window.scrollTo(lock.scrollX, lock.scrollY);
+}
+
 function createSettingsPanel() {
     if (document.getElementById('ylc-settings-panel')) return;
+    lockPageScrollForSettingsPanel();
     const backdrop = document.createElement('div');
     backdrop.id = 'ylc-settings-backdrop';
     const blockBehindPageTap = (event) => {
@@ -289,13 +344,6 @@ function createSettingsPanel() {
     const panel = document.createElement('div');
     panel.id = 'ylc-settings-panel';
     panel.style.display = 'flex';
-    const stopPanelEventPropagation = (event) => {
-        event.stopPropagation();
-    };
-    panel.addEventListener('pointerdown', stopPanelEventPropagation, true);
-    panel.addEventListener('touchstart', stopPanelEventPropagation, { capture: true, passive: true });
-    panel.addEventListener('touchmove', stopPanelEventPropagation, { capture: true, passive: true });
-    panel.addEventListener('click', stopPanelEventPropagation, true);
 
     const header = document.createElement('div');
     header.id = 'ylc-settings-header';
@@ -309,6 +357,7 @@ function createSettingsPanel() {
     // popup側がタブIDを取得できない環境でも親と同じ状態キーを参照できるよう、クエリで渡す
     iframe.src = `${ylcApi.getRuntimeUrl('popup.html')}?ylcStateKey=${encodeURIComponent(stateKey || '')}`;
     iframe.id = 'ylc-settings-iframe';
+    iframe.setAttribute('scrolling', 'yes');
     panel.appendChild(header);
     panel.appendChild(iframe);
     document.body.appendChild(backdrop);
@@ -403,6 +452,7 @@ function createSettingsPanel() {
         document.removeEventListener('mouseup', endDrag);
         document.removeEventListener('touchend', endDrag);
         backdrop.remove();
+        unlockPageScrollForSettingsPanel();
         settingsPanelCleanup = null;
     };
 }
@@ -780,6 +830,7 @@ function removeSettingsPanel() {
     if (settingsPanelCleanup) settingsPanelCleanup();
     if (panel) panel.remove();
     document.getElementById('ylc-settings-backdrop')?.remove();
+    unlockPageScrollForSettingsPanel();
 }
 
 function cleanupWhenLeavingWatch() {

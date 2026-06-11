@@ -43,5 +43,23 @@ assert(/backdrop\.id\s*=\s*['"]ylc-settings-backdrop['"]/.test(contentScript),
     '設定パネル生成時にバックドロップDOMを作る');
 assert(/getElementById\(['"]ylc-settings-backdrop['"]\)\?\.\s*remove\(\)/.test(contentScript),
     '設定パネル削除時にバックドロップも削除する');
+assert(!/panel\.addEventListener\([^,]+,\s*stopPanelEventPropagation,\s*true\)/.test(contentScript),
+    '設定パネルはcapture段階で子要素のタップを止めない');
+assert(!/panel\.addEventListener\([^,]+,\s*stopPanelEventPropagation,\s*\{\s*capture:\s*true/.test(contentScript),
+    '設定パネルはcaptureオプションで子要素のタッチを止めない');
+assert(/function lockPageScrollForSettingsPanel\(\)/.test(contentScript),
+    '設定パネル表示中に背後ページのスクロールをロックする関数がある');
+assert(/function unlockPageScrollForSettingsPanel\(\)/.test(contentScript),
+    '設定パネル削除時に背後ページのスクロールを復元する関数がある');
+assert(/lockPageScrollForSettingsPanel\(\)/.test(contentScript),
+    '設定パネル生成時に背後ページのスクロールをロックする');
+assert(/unlockPageScrollForSettingsPanel\(\)/.test(contentScript),
+    '設定パネル削除時に背後ページのスクロールを復元する');
+assert(/function shouldOpenSettingsAsTopLevelPage\(\)/.test(contentScript),
+    'モバイルではページ内iframeを避ける判定関数がある');
+assert(/function openSettingsAsTopLevelPage\(\)/.test(contentScript),
+    'モバイルでは設定ページをトップレベルで開く関数がある');
+assert(/shouldOpenSettingsAsTopLevelPage\(\)[\s\S]*openSettingsAsTopLevelPage\(\)/.test(contentScript),
+    '設定ボタンはモバイル時にトップレベル設定ページを開く');
 
 process.exit(failures ? 1 : 0);
