@@ -116,9 +116,12 @@ function createSafeContent(htmlString) {
  */
 function flowComment(data) {
     if (!flowContainer || !settings.enableFlowComments) return;
+    // タブ非表示中は描画しない（transitionはバックグラウンドでも合成コストを持つ）
+    if (document.hidden) return;
 
-    // 二重の安全策：画面上のフローコメント数が多すぎる場合は描画をスキップ（VODシーク時の暴発対策）
-    const MAX_ONSCREEN_COMMENTS = 60;
+    // 二重の安全策：画面上のフローコメント数が多すぎる場合は描画をスキップ（VODシーク時の暴発対策）。
+    // モバイル幅では描画面積・GPU資源が小さいため上限を半分にする
+    const MAX_ONSCREEN_COMMENTS = window.innerWidth <= 768 ? 30 : 60;
     if (flowContainer.childElementCount > MAX_ONSCREEN_COMMENTS) {
         return;
     }
@@ -224,10 +227,16 @@ function flowComment(data) {
             el.style.transform = `translateX(-${containerWidth + commentWidth}px)`;
         });
 
-        // アニメーション完了後に要素を削除
-        setTimeout(() => {
+        // アニメーション完了後に要素を削除。transitionendが主、
+        // タイマーはイベント不発（タブ非表示中の遅延等）への保険
+        let removed = false;
+        const removeEl = () => {
+            if (removed) return;
+            removed = true;
             el.style.willChange = 'auto';
             el.remove();
-        }, settings.flowTime * 1000 + 500);
+        };
+        el.addEventListener('transitionend', removeEl, { once: true });
+        setTimeout(removeEl, settings.flowTime * 1000 + 1500);
     });
 }

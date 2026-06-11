@@ -198,6 +198,41 @@ async function run() {
         console.log('OK: 内部キー判定');
     }
 
+    // 9. onFrameMessageが解除関数を返し、解除で同一リスナーが外れる
+    {
+        const { chromeObj } = makeChromeMock();
+        const code = fs.readFileSync(path.join(__dirname, '..', 'extension_api.js'), 'utf8');
+        const added = [];
+        const removed = [];
+        const windowObj = {
+            location: { search: '' },
+            addEventListener: (type, fn) => added.push({ type, fn }),
+            removeEventListener: (type, fn) => removed.push({ type, fn }),
+        };
+        windowObj.parent = windowObj;
+        const sandbox = {
+            chrome: chromeObj,
+            window: windowObj,
+            document: { referrer: '' },
+            navigator: { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0', maxTouchPoints: 0 },
+            URL,
+            URLSearchParams,
+            console,
+            Date,
+            Promise,
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(code, sandbox);
+        const unsubscribe = sandbox.ylcApi.onFrameMessage(() => {});
+        assert.strictEqual(typeof unsubscribe, 'function');
+        assert.strictEqual(added.length, 1);
+        assert.strictEqual(added[0].type, 'message');
+        unsubscribe();
+        assert.strictEqual(removed.length, 1);
+        assert.strictEqual(removed[0].fn, added[0].fn);
+        console.log('OK: onFrameMessage購読解除');
+    }
+
     console.log('\nすべてのテストに合格');
 }
 

@@ -182,6 +182,24 @@ const directTranslationCache = new Map();
 const DIRECT_TRANSLATION_CACHE_MAX = 300;
 
 /**
+ * content script文脈の翻訳結果共有キャッシュ。
+ * background経由・直接fetchのどちらの成功結果も保存し、
+ * 同一テキスト再出現時のservice worker起床とネットワークを節約する
+ */
+function getCachedTranslation(text) {
+    if (!text) return null;
+    return directTranslationCache.get(text) || null;
+}
+
+function cacheTranslation(text, translation) {
+    if (!text || !translation) return;
+    if (directTranslationCache.size >= DIRECT_TRANSLATION_CACHE_MAX) {
+        directTranslationCache.delete(directTranslationCache.keys().next().value);
+    }
+    directTranslationCache.set(text, translation);
+}
+
+/**
  * background中継が使えない環境向けのGoogle翻訳直接実行。
  * background経由と同じ前処理・辞書・後処理パイプラインを通す。
  *
@@ -193,7 +211,7 @@ async function translateDirectWithGoogle(text, dictionaryStr) {
     if (!text) return { error: '翻訳エラー' };
     if (isRecentlyFailedTranslation(text)) return { error: '翻訳エラー' };
 
-    const cached = directTranslationCache.get(text);
+    const cached = getCachedTranslation(text);
     if (cached) return { translation: cached };
 
     let processedText = await preprocessForYouTubeChat(text);
@@ -202,10 +220,7 @@ async function translateDirectWithGoogle(text, dictionaryStr) {
     const result = await translateWithGoogle(processedText);
     if (result && result.translation) {
         postprocessJapanese(result);
-        if (directTranslationCache.size >= DIRECT_TRANSLATION_CACHE_MAX) {
-            directTranslationCache.delete(directTranslationCache.keys().next().value);
-        }
-        directTranslationCache.set(text, result.translation);
+        cacheTranslation(text, result.translation);
         return result;
     }
 

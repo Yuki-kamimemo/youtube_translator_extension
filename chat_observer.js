@@ -9,8 +9,12 @@ let chatObserver = null;
 let ngUserList = [];
 let ngWordList = [];
 let isInitialized = false;
+let isInitializing = false;
 let initializationRetryTimer = null;
 let stateKey = null;
+// 親からYLC_FRAME_MODEで通知される。trueなら自分は不可視のhidden iframeであり、
+// インライン翻訳のDOM挿入は誰にも見えないため行わない
+let isHiddenObserver = false;
 let pageStateGeneration = 0;
 const managedTimeouts = new Set();
 
@@ -18,6 +22,7 @@ const DEFAULTS = {
     enableInlineTranslation: true,
     enableFlowComments: true,
     enableGoogleTranslateFallback: true,
+    flowContent: 'translation',
     dictionary: '',
     ngUsers: '',
     ngWords: '',
@@ -191,7 +196,14 @@ function processNewCommentNode(node) {
     const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf]/.test(comment.text);
     const hasForeignCharacters = /[a-zA-Z0-9\uac00-\ud7a3\u0400-\u04ff\u0e00-\u0e7f\xc0-\u017f]/.test(comment.text);
 
-    const shouldTranslate = settings.enableInlineTranslation &&
+    // この文脈で翻訳が必要か:
+    // - 可視iframe: インライン表示用（従来どおり）
+    // - hidden iframe: フローに翻訳を載せる設定（translation/both）のときだけ
+    const needsTranslationHere = isHiddenObserver
+        ? (settings.enableFlowComments && settings.flowContent !== 'original')
+        : settings.enableInlineTranslation;
+
+    const shouldTranslate = needsTranslationHere &&
         comment.text &&
         !comment.text.startsWith('[') &&
         !comment.text.startsWith('<') &&
@@ -201,10 +213,12 @@ function processNewCommentNode(node) {
 
     if (shouldTranslate) {
         enqueueTranslation(comment.text, (result) => {
-            if (result && result.error) {
-                displayInlineTranslation(node, `[${result.error}]`, true);
-            } else if (result && result.translation) {
-                displayInlineTranslation(node, result.translation);
+            if (!isHiddenObserver) {
+                if (result && result.error) {
+                    displayInlineTranslation(node, `[${result.error}]`, true);
+                } else if (result && result.translation) {
+                    displayInlineTranslation(node, result.translation);
+                }
             }
             sendToFlow(result ? result.translation : '');
         });
@@ -227,6 +241,8 @@ function startChatObserver(chatItemsEl) {
     const MAX_BURST_COMMENTS = 5;
 
     chatObserver = new MutationObserver(mutations => {
+        // タブ非表示中は解析・翻訳とも無意味（ライブチャットは追いかけ再生しない）
+        if (document.hidden) return;
         const allAddedNodes = [];
         for (const m of mutations) {
             for (const node of m.addedNodes) {
@@ -286,6 +302,12 @@ function processTranslationQueue() {
             callback({ error: '翻訳エラー' });
             continue;
         }
+        // 同一テキストの再翻訳はSWを起こさずローカルキャッシュで返す
+        const cached = getCachedTranslation(text);
+        if (cached) {
+            callback({ translation: cached });
+            continue;
+        }
         translationActive++;
         ylcApi.sendMessage({ action: "translate", text }).then(async (messageResult) => {
             let result;
@@ -297,6 +319,7 @@ function processTranslationQueue() {
             }
             translationActive--;
             if (result && result.error) markTranslationFailed(text);
+            if (result && result.translation) cacheTranslation(text, result.translation);
             callback(result);
             if (translationQueue.length > 0) {
                 setManagedTimeout(processTranslationQueue, THROTTLE_INTERVAL);
@@ -306,7 +329,8 @@ function processTranslationQueue() {
 }
 
 async function initializeIframe() {
-    if (isInitialized) return;
+    if (isInitialized || isInitializing) return;
+    isInitializing = true;
     const generation = pageStateGeneration;
 
     try {
@@ -324,6 +348,8 @@ async function initializeIframe() {
         }
     } catch (error) {
         isInitialized = false;
+    } finally {
+        isInitializing = false;
     }
 }
 
@@ -379,6 +405,10 @@ async function main() {
 
     // storage.onChangedが不安定な環境向け: 親ページからの明示的な設定更新通知を受ける
     ylcApi.onFrameMessage((message) => {
+        if (message.type === 'YLC_FRAME_MODE') {
+            isHiddenObserver = message.hiddenObserver === true;
+            return;
+        }
         if (message.type !== 'YLC_SETTINGS_SAVED') return;
         if (message.settings && typeof message.settings === 'object') {
             for (const key in message.settings) {
@@ -398,13 +428,19 @@ async function main() {
         }
     });
 
+    const INIT_RETRY_MAX_ATTEMPTS = 15; // live_chatページで#itemsが出ないまま回り続けない
+    let initAttempts = 0;
     const attemptInitialization = () => {
-        if (!isInitialized && location.pathname.startsWith('/live_chat')) {
-            initializeIframe();
+        initAttempts++;
+        if (isInitialized || initAttempts > INIT_RETRY_MAX_ATTEMPTS) {
+            if (initializationRetryTimer) {
+                clearInterval(initializationRetryTimer);
+                initializationRetryTimer = null;
+            }
+            return;
         }
-        if (isInitialized && initializationRetryTimer) {
-            clearInterval(initializationRetryTimer);
-            initializationRetryTimer = null;
+        if (location.pathname.startsWith('/live_chat')) {
+            initializeIframe();
         }
     };
 

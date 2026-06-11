@@ -239,19 +239,8 @@ try {
     });
 } catch (e) { /* tabs API未対応環境 */ }
 
-// キャッシュクリーンアップ（alarms未対応環境では翻訳リクエスト時の間引きのみで運用）
-try {
-    chrome.runtime.onInstalled.addListener(() => {
-        try {
-            chrome.alarms?.create('cleanupCache', { periodInMinutes: 1 });
-        } catch (e) { /* alarms未対応環境 */ }
-    });
-    chrome.alarms?.onAlarm?.addListener((alarm) => {
-        if (alarm.name === 'cleanupCache') purgeExpiredCacheEntries();
-    });
-} catch (e) { /* alarms未対応環境 */ }
-
-// alarmsが動かない環境向けの保険: 翻訳リクエスト処理時に60秒間隔で期限切れを間引く
+// キャッシュ掃除は翻訳リクエスト処理時のオンデマンド実行のみ（60秒間隔で間引き）。
+// キャッシュはSWメモリ上にありサスペンドで消えるため、定期タイマーは持たない
 let lastCachePurgeAt = 0;
 function purgeExpiredCacheThrottled() {
     const now = Date.now();

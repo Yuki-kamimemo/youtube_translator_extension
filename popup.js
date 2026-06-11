@@ -459,19 +459,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isToolbarPopup) { resolve(null); return; }
             const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
             let settled = false;
-            const timer = setTimeout(() => {
-                if (!settled) { settled = true; resolve(null); }
-            }, timeoutMs);
-            ylcApi.onFrameMessage((message) => {
-                if (settled || message.type !== responseType || message.requestId !== requestId) return;
+            let unsubscribe = null;
+            const finish = (value) => {
+                if (settled) return;
                 settled = true;
                 clearTimeout(timer);
-                resolve(message);
+                if (unsubscribe) unsubscribe();
+                resolve(value);
+            };
+            const timer = setTimeout(() => finish(null), timeoutMs);
+            unsubscribe = ylcApi.onFrameMessage((message) => {
+                if (message.type !== responseType || message.requestId !== requestId) return;
+                finish(message);
             });
             if (!ylcApi.postToParent({ type: requestType, requestId, ...payload })) {
-                settled = true;
-                clearTimeout(timer);
-                resolve(null);
+                finish(null);
             }
         });
     }

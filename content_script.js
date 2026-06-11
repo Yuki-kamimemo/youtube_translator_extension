@@ -9,6 +9,7 @@ let ngUserList = [];
 let ngWordList = [];
 let flowContainer = null;
 let isInitialized = false;
+let isInitializing = false;
 let initializationRetryTimer = null;
 let hiddenChatIframe = null;
 let stateKey = null;
@@ -18,6 +19,7 @@ let chatObserverScriptReady = false;
 let directChatObservation = false;
 let settingsPanelCleanup = null;
 let hiddenChatWaitObserver = null;
+let chatFrameAttrObserver = null;
 let pageStateGeneration = 0;
 const managedTimeouts = new Set();
 
@@ -473,6 +475,7 @@ function startChatObserver(chatItemsEl) {
     const MAX_BURST_COMMENTS = 5; // 一度に処理・フローに流す最大件数
 
     chatObserver = new MutationObserver(mutations => {
+        if (document.hidden) return;
         // mutations 内のすべての追加ノードを平坦化して収集
         const allAddedNodes = [];
         for (const m of mutations) {
@@ -504,6 +507,18 @@ function startChatObserver(chatItemsEl) {
     chatObserver.observe(chatItemsEl, { childList: true });
 }
 
+/**
+ * 可視チャットiframeが使える状態か。
+ * collapsed属性つきのytd-live-chat-frameはiframeを破棄またはabout:blank化するため、
+ * iframe要素の存在とsrcの両方を確認する
+ */
+function hasUsableVisibleChat() {
+    const frame = document.querySelector('ytd-live-chat-frame');
+    if (!frame || frame.hasAttribute('collapsed')) return false;
+    const iframe = frame.querySelector('iframe#chatframe');
+    return !!iframe && /\/live_chat/.test(iframe.src || '');
+}
+
 function setupHiddenChat() {
     const urlParams = new URLSearchParams(window.location.search);
     const videoId = urlParams.get('v');
@@ -515,18 +530,33 @@ function setupHiddenChat() {
         hiddenChatIframe = null;
     }
 
-    const checkAndCreate = () => {
-        if (document.querySelector('ytd-live-chat-frame')) {
-            createHiddenIframe(videoId);
+    const evaluate = () => {
+        const chatFrame = document.querySelector('ytd-live-chat-frame');
+        if (!chatFrame) return false;
+        watchVisibleChatFrame(chatFrame);
+        if (hasUsableVisibleChat()) {
+            // 可視チャットに注入済みのchat_observer.jsが同じデータを送ってくるため
+            // hidden iframeは作らない。注入されない環境では既存のgrace timerが
+            // YLC_OBSERVER_READY不達を検知して直接監視へフォールバックする
+            resetChatObservationState();
+            setManagedTimeout(() => {
+                if (!chatObserverScriptReady) startDirectChatObservation();
+            }, OBSERVER_READY_GRACE_MS);
             return true;
         }
-        return false;
+        if (!settings.enableFlowComments) {
+            // フロー無効かつ可視チャットなし: 監視する意味がない（インライン翻訳の
+            // 表示先DOMが存在しない）ため何も作らない
+            return true;
+        }
+        createHiddenIframe(videoId);
+        return true;
     };
 
-    if (!checkAndCreate()) {
+    if (!evaluate()) {
         if (hiddenChatWaitObserver) hiddenChatWaitObserver.disconnect();
         const observer = new MutationObserver((mutations, obs) => {
-            if (checkAndCreate()) {
+            if (evaluate()) {
                 obs.disconnect();
                 if (hiddenChatWaitObserver === obs) hiddenChatWaitObserver = null;
             }
@@ -538,6 +568,27 @@ function setupHiddenChat() {
             if (hiddenChatWaitObserver === observer) hiddenChatWaitObserver = null;
         }, 10000);
     }
+}
+
+/**
+ * 可視チャットの開閉（collapsed属性・iframe差し替え）を監視し、状態が変わったら
+ * setupHiddenChatを再評価する。ポーリングではなく属性observerのみ（電力コストほぼゼロ）
+ */
+function watchVisibleChatFrame(chatFrame) {
+    if (chatFrameAttrObserver) chatFrameAttrObserver.disconnect();
+    let lastUsable = hasUsableVisibleChat();
+    chatFrameAttrObserver = new MutationObserver(() => {
+        const usable = hasUsableVisibleChat();
+        if (usable === lastUsable) return;
+        lastUsable = usable;
+        if (hiddenChatIframe) {
+            hiddenChatIframe.remove();
+            hiddenChatIframe = null;
+        }
+        resetChatObservationState();
+        setupHiddenChat();
+    });
+    chatFrameAttrObserver.observe(chatFrame, { attributes: true, attributeFilter: ['collapsed'], childList: true, subtree: false });
 }
 
 let hiddenChatIframeFailed = false;
@@ -692,6 +743,10 @@ function removeHiddenChat() {
         hiddenChatWaitObserver.disconnect();
         hiddenChatWaitObserver = null;
     }
+    if (chatFrameAttrObserver) {
+        chatFrameAttrObserver.disconnect();
+        chatFrameAttrObserver = null;
+    }
     if (hiddenChatIframe) {
         hiddenChatIframe.remove();
         hiddenChatIframe = null;
@@ -767,6 +822,12 @@ function processTranslationQueue() {
             callback({ error: '翻訳エラー' });
             continue;
         }
+        // 同一テキストの再翻訳はSWを起こさずローカルキャッシュで返す
+        const cached = getCachedTranslation(text);
+        if (cached) {
+            callback({ translation: cached });
+            continue;
+        }
         translationActive++;
         ylcApi.sendMessage({ action: "translate", text }).then(async (messageResult) => {
             let result;
@@ -778,6 +839,7 @@ function processTranslationQueue() {
             }
             translationActive--;
             if (result && result.error) markTranslationFailed(text);
+            if (result && result.translation) cacheTranslation(text, result.translation);
             callback(result);
             if (translationQueue.length > 0) {
                 setManagedTimeout(processTranslationQueue, THROTTLE_INTERVAL);
@@ -871,6 +933,10 @@ function applySettingsUpdate(newSettings, tabState, persist = false) {
                 flowBtn.title = `コメント表示: ${settings.enableFlowComments ? 'オン' : 'オフ'}`;
                 flowBtn.classList.toggle('enabled', settings.enableFlowComments);
             }
+            // フローON切替時にhidden iframe要否を再評価（OFF時は次回ナビゲーションで消える）
+            if (settings.enableFlowComments && !hiddenChatIframe && location.pathname.startsWith('/watch')) {
+                setupHiddenChat();
+            }
         }
     }
     forwardSettingsToHiddenChat(newSettings, tabState);
@@ -944,8 +1010,9 @@ function forwardSettingsToHiddenChat(newSettings, tabState) {
 }
 
 async function initializeTopLevel() {
-    if (isInitialized) return;
+    if (isInitialized || isInitializing) return;
     if (!location.pathname.startsWith('/watch')) return;
+    isInitializing = true;
     const generation = pageStateGeneration;
 
     try {
@@ -979,7 +1046,31 @@ async function initializeTopLevel() {
         isInitialized = true;
     } catch (error) {
         isInitialized = false;
+    } finally {
+        isInitializing = false;
     }
+}
+
+const INIT_RETRY_INTERVAL_MS = 2000;
+const INIT_RETRY_MAX_ATTEMPTS = 15; // 約30秒で諦める（プレーヤーが出ないページで回り続けない）
+
+function startInitRetryLoop() {
+    if (initializationRetryTimer) {
+        clearInterval(initializationRetryTimer);
+        initializationRetryTimer = null;
+    }
+    if (!location.pathname.startsWith('/watch')) return;
+    let attempts = 0;
+    initializationRetryTimer = setInterval(() => {
+        attempts++;
+        if (isInitialized || attempts > INIT_RETRY_MAX_ATTEMPTS || !location.pathname.startsWith('/watch')) {
+            clearInterval(initializationRetryTimer);
+            initializationRetryTimer = null;
+            return;
+        }
+        initializeTopLevel();
+    }, INIT_RETRY_INTERVAL_MS);
+    initializeTopLevel();
 }
 
 async function main() {
@@ -1050,17 +1141,10 @@ async function main() {
             flowBtn.title = `コメント表示: ${settings.enableFlowComments ? 'オン' : 'オフ'}`;
             flowBtn.classList.toggle('enabled', settings.enableFlowComments);
         }
+        if (uiUpdateFlow && settings.enableFlowComments && !hiddenChatIframe && location.pathname.startsWith('/watch')) {
+            setupHiddenChat();
+        }
     });
-
-    const attemptInitialization = () => {
-        if (!isInitialized) {
-            initializeTopLevel();
-        }
-        if (isInitialized && initializationRetryTimer) {
-            clearInterval(initializationRetryTimer);
-            initializationRetryTimer = null;
-        }
-    };
 
     if (!window.ylcEnhancerMessageListener) {
         window.ylcEnhancerMessageListener = true;
@@ -1071,12 +1155,18 @@ async function main() {
             else if (req.action === 'toggleSettingsPanel') { toggleSettingsPanel(); }
         });
         // 子フレーム（hidden live_chat / popup iframe）からの直接postMessage経路
-        ylcApi.onFrameMessage(message => {
+        ylcApi.onFrameMessage((message, event) => {
             if (message.type === 'FLOW_COMMENT_DATA') { handleFlowCommentData(message.data); }
             else if (message.type === 'YLC_SETTINGS_SAVED') { applySettingsUpdate(message.settings, message.tabState, message.persist === true); }
             else if (message.type === 'YLC_SETTINGS_REQUEST') { respondSettingsRequest(message.requestId, message.defaults); }
             else if (message.type === 'YLC_CLOSE_SETTINGS_PANEL') { removeSettingsPanel(); }
-            else if (message.type === 'YLC_OBSERVER_READY') { handleObserverReady(); }
+            else if (message.type === 'YLC_OBSERVER_READY') {
+                handleObserverReady();
+                // hidden iframeには不可視であることを通知し、無駄なインライン翻訳を止めさせる
+                if (hiddenChatIframe && event?.source === hiddenChatIframe.contentWindow) {
+                    ylcApi.postToFrame(event.source, { type: 'YLC_FRAME_MODE', hiddenObserver: true }, 'https://www.youtube.com');
+                }
+            }
             else if (message.type === 'YLC_DIAG_REQUEST') { respondDiagnostics(message.requestId); }
         });
     }
@@ -1090,23 +1180,32 @@ async function main() {
         }
         pageStateGeneration++;
         isInitialized = false;
-        if (initializationRetryTimer) clearInterval(initializationRetryTimer);
-        initializationRetryTimer = setInterval(attemptInitialization, 2000);
+        startInitRetryLoop();
         setupHiddenChat();
     };
 
     if (!window.ylcNavigateListener) {
         window.ylcNavigateListener = true;
-        document.body.addEventListener('yt-navigate-finish', handleNavigation);
-        // yt-navigate-finishが発火しない環境（m.youtube.com等）向けのURL変化監視。
-        // イベントが先に処理した場合はhrefが一致するため二重実行されない
-        setInterval(() => {
+        // yt-navigate-finishが動く環境（www desktop）ではイベントだけで足りるため、
+        // 一度でも発火を確認したらポーリングを恒久停止する
+        let navigateEventSeen = false;
+        document.body.addEventListener('yt-navigate-finish', () => {
+            navigateEventSeen = true;
+            handleNavigation();
+        });
+        // m.youtube.com等イベント非発火環境向けのフォールバックポーリング。
+        // タブ非表示中はナビゲーション操作が起きないため休止する
+        const urlPollTimer = setInterval(() => {
+            if (navigateEventSeen) {
+                clearInterval(urlPollTimer);
+                return;
+            }
+            if (document.hidden) return;
             if (location.href !== lastNavigationHref) handleNavigation();
         }, 1000);
     }
     setupHiddenChat();
-
-    initializationRetryTimer = setInterval(attemptInitialization, 2000);
+    startInitRetryLoop();
 }
 
 main();

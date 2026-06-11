@@ -280,6 +280,7 @@ var ylcApi = (() => {
      * 他フレームからの拡張メッセージを受信する。
      * 許可origin: YouTubeページ（hidden live_chat等）と拡張オリジン（popup iframe）。
      * sourceマーカーとoriginの両方を検証する。
+     * 戻り値は購読解除関数（一時リスナーのリーク防止用）
      */
     function onFrameMessage(callback) {
         const allowedOrigins = new Set(PARENT_ORIGIN_ALLOWLIST);
@@ -287,12 +288,14 @@ var ylcApi = (() => {
         if (extensionBaseUrl) {
             try { allowedOrigins.add(new URL(extensionBaseUrl).origin); } catch { /* 無効URLは無視 */ }
         }
-        window.addEventListener('message', (event) => {
+        const handler = (event) => {
             const data = event.data;
             if (!data || typeof data !== 'object' || data.source !== FRAME_MESSAGE_SOURCE) return;
             if (!allowedOrigins.has(event.origin)) return;
             callback(data, event);
-        });
+        };
+        window.addEventListener('message', handler);
+        return () => window.removeEventListener('message', handler);
     }
 
     // ---- タブ/セッション状態キーの解決 ----
