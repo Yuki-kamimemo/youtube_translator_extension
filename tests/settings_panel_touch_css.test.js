@@ -55,6 +55,13 @@ assert(/function lockPageScrollForSettingsPanel\(\)/.test(contentScript),
     '設定パネル表示中に背後ページのスクロールをロックする関数がある');
 assert(/function unlockPageScrollForSettingsPanel\(\)/.test(contentScript),
     '設定パネル削除時に背後ページのスクロールを復元する関数がある');
+const lockScrollFnMatch = contentScript.match(/function lockPageScrollForSettingsPanel\(\)\s*\{([\s\S]*?)\n\}/);
+const lockScrollFnBody = lockScrollFnMatch ? lockScrollFnMatch[1] : '';
+const unlockScrollFnMatch = contentScript.match(/function unlockPageScrollForSettingsPanel\(\)\s*\{([\s\S]*?)\n\}/);
+const unlockScrollFnBody = unlockScrollFnMatch ? unlockScrollFnMatch[1] : '';
+const scrollLockBodyMutationPattern = /document\.body\.style\.(position|top|left|width|touchAction)\s*=/;
+assert(!scrollLockBodyMutationPattern.test(lockScrollFnBody) && !scrollLockBodyMutationPattern.test(unlockScrollFnBody),
+    'スクロールロックはbodyのposition/top/left/width/touchActionを変更しない');
 assert(/lockPageScrollForSettingsPanel\(\)/.test(contentScript),
     '設定パネル生成時に背後ページのスクロールをロックする');
 assert(/unlockPageScrollForSettingsPanel\(\)/.test(contentScript),

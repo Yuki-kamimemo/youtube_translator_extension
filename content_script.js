@@ -274,6 +274,12 @@ function shouldUseShadowSettingsPanel() {
     return window.innerWidth <= MOBILE_PANEL_MAX_WIDTH && coarsePointer;
 }
 
+function shouldLockPageScrollForSettingsPanel() {
+    if (ylcApi.isAppleTouchEnvironment()) return true;
+    return typeof window.matchMedia === 'function' &&
+        window.matchMedia('(pointer: coarse)').matches;
+}
+
 async function getSettingsPanelTemplateHtml() {
     if (!settingsPanelTemplatePromise) {
         settingsPanelTemplatePromise = fetch(ylcApi.getRuntimeUrl('popup.html'))
@@ -309,24 +315,13 @@ function saveSettingsPanelLayout(panel) {
 
 function lockPageScrollForSettingsPanel() {
     if (settingsPanelScrollLock) return;
+    if (!shouldLockPageScrollForSettingsPanel()) return;
     settingsPanelScrollLock = {
-        scrollX: window.scrollX || window.pageXOffset || 0,
-        scrollY: window.scrollY || window.pageYOffset || 0,
         htmlOverflow: document.documentElement.style.overflow,
         bodyOverflow: document.body.style.overflow,
-        bodyPosition: document.body.style.position,
-        bodyTop: document.body.style.top,
-        bodyLeft: document.body.style.left,
-        bodyWidth: document.body.style.width,
-        bodyTouchAction: document.body.style.touchAction,
     };
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${settingsPanelScrollLock.scrollY}px`;
-    document.body.style.left = `-${settingsPanelScrollLock.scrollX}px`;
-    document.body.style.width = '100%';
-    document.body.style.touchAction = 'none';
 }
 
 function unlockPageScrollForSettingsPanel() {
@@ -335,12 +330,6 @@ function unlockPageScrollForSettingsPanel() {
     settingsPanelScrollLock = null;
     document.documentElement.style.overflow = lock.htmlOverflow;
     document.body.style.overflow = lock.bodyOverflow;
-    document.body.style.position = lock.bodyPosition;
-    document.body.style.top = lock.bodyTop;
-    document.body.style.left = lock.bodyLeft;
-    document.body.style.width = lock.bodyWidth;
-    document.body.style.touchAction = lock.bodyTouchAction;
-    window.scrollTo(lock.scrollX, lock.scrollY);
 }
 
 function createSettingsPanel() {
