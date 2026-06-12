@@ -1,4 +1,8 @@
-document.addEventListener('DOMContentLoaded', () => {
+function initSettingsPanel(root = document, options = {}) {
+    const rootNode = root || document;
+    const getById = (id) => rootNode.getElementById(id);
+    const queryAll = (selector) => rootNode.querySelectorAll(selector);
+
     function debounce(func, delay) {
         let timeoutId;
         return function(...args) {
@@ -10,42 +14,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const elements = {
-        translator: document.getElementById('translator'),
-        lmstudioModel: document.getElementById('lmstudioModel'),
-        refreshLmstudioModelsBtn: document.getElementById('refreshLmstudioModelsBtn'),
-        lmstudioModelsStatus: document.getElementById('lmstudioModelsStatus'),
-        lmstudioModelActive: document.getElementById('lmstudioModelActive'),
-        lmstudioStatus: document.getElementById('lmstudioStatus'),
-        lmstudioConfigGroup: document.getElementById('lmstudio-config-group'),
-        enableGoogleTranslateFallback: document.getElementById('enableGoogleTranslateFallback'),
-        enableInlineTranslation: document.getElementById('enableInlineTranslation'),
-        enableFlowComments: document.getElementById('enableFlowComments'),
-        flowContent: document.getElementById('flowContent'),
-        flowTime: document.getElementById('flowTime'),
-        fontSize: document.getElementById('fontSize'),
-        opacity: document.getElementById('opacity'),
-        opacityValue: document.getElementById('opacityValue'),
-        position: document.getElementById('position'),
-        strokeWidth: document.getElementById('strokeWidth'),
-        strokeColor: document.getElementById('strokeColor'),
-        flowFontFamily: document.getElementById('flowFontFamily'),
-        customFontFamily: document.getElementById('customFontFamily'),
-        flowMarginTop: document.getElementById('flowMarginTop'),
-        flowMarginBottom: document.getElementById('flowMarginBottom'),
-        normalColor: document.getElementById('normalColor'),
-        memberColor: document.getElementById('memberColor'),
-        moderatorColor: document.getElementById('moderatorColor'),
-        superchatColor: document.getElementById('superchatColor'),
-        membershipColorFlow: document.getElementById('membershipColorFlow'),
-        overlayPosition: document.getElementById('overlayPosition'),
-        dictionary: document.getElementById('dictionary'),
-        ngUsers: document.getElementById('ngUsers'),
-        ngWords: document.getElementById('ngWords'),
-        profileName: document.getElementById('profileName'),
-        saveProfileBtn: document.getElementById('saveProfileBtn'),
-        deleteProfileBtn: document.getElementById('deleteProfileBtn'),
-        profileSelector: document.getElementById('profileSelector'),
-        loadProfileBtn: document.getElementById('loadProfileBtn'),
+        translator: getById('translator'),
+        lmstudioModel: getById('lmstudioModel'),
+        refreshLmstudioModelsBtn: getById('refreshLmstudioModelsBtn'),
+        lmstudioModelsStatus: getById('lmstudioModelsStatus'),
+        lmstudioModelActive: getById('lmstudioModelActive'),
+        lmstudioStatus: getById('lmstudioStatus'),
+        lmstudioConfigGroup: getById('lmstudio-config-group'),
+        enableGoogleTranslateFallback: getById('enableGoogleTranslateFallback'),
+        enableInlineTranslation: getById('enableInlineTranslation'),
+        enableFlowComments: getById('enableFlowComments'),
+        flowContent: getById('flowContent'),
+        flowTime: getById('flowTime'),
+        fontSize: getById('fontSize'),
+        opacity: getById('opacity'),
+        opacityValue: getById('opacityValue'),
+        position: getById('position'),
+        strokeWidth: getById('strokeWidth'),
+        strokeColor: getById('strokeColor'),
+        flowFontFamily: getById('flowFontFamily'),
+        customFontFamily: getById('customFontFamily'),
+        flowMarginTop: getById('flowMarginTop'),
+        flowMarginBottom: getById('flowMarginBottom'),
+        normalColor: getById('normalColor'),
+        memberColor: getById('memberColor'),
+        moderatorColor: getById('moderatorColor'),
+        superchatColor: getById('superchatColor'),
+        membershipColorFlow: getById('membershipColorFlow'),
+        overlayPosition: getById('overlayPosition'),
+        dictionary: getById('dictionary'),
+        ngUsers: getById('ngUsers'),
+        ngWords: getById('ngWords'),
+        profileName: getById('profileName'),
+        saveProfileBtn: getById('saveProfileBtn'),
+        deleteProfileBtn: getById('deleteProfileBtn'),
+        profileSelector: getById('profileSelector'),
+        loadProfileBtn: getById('loadProfileBtn'),
     };
 
     const defaults = {
@@ -72,12 +76,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // 親ページ（content script）が解決した状態キーをクエリで受け取る。
     // タブIDが取れない環境でも親と同じキーを参照するための仕組み
     const urlStateKey = (() => {
+        if (options.stateKey) return options.stateKey;
         try { return new URLSearchParams(location.search).get('ylcStateKey') || null; } catch { return null; }
     })();
 
     // 実行文脈の判定: ページ内iframe（親=YouTubeページ）か、ツールバーポップアップ（トップレベル）か。
     // ポップアップ文脈ではwidth指定がないと極端なサイズになるためクラスで調整する
-    const isToolbarPopup = (window.parent === window);
+    const panelContext = options.context || ((window.parent === window) ? 'toolbar' : 'iframe');
+    const isToolbarPopup = panelContext === 'toolbar';
+    const isInPagePanel = panelContext === 'inpage';
     if (isToolbarPopup) {
         document.body.classList.add('ylc-toolbar-popup');
     }
@@ -98,14 +105,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    const tabs = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
+    const tabs = queryAll('.tab-btn');
+    const tabContents = queryAll('.tab-content');
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             tabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             tabContents.forEach(c => c.classList.remove('active'));
-            document.getElementById(tab.dataset.tab).classList.add('active');
+            getById(tab.dataset.tab)?.classList.add('active');
         });
     });
 
@@ -156,6 +163,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentStateKey) {
                 ylcApi.updateTabState(currentStateKey, tabState);
             }
+        }
+
+        if (isInPagePanel) {
+            if (typeof options.onSettingsSaved === 'function') {
+                options.onSettingsSaved(syncState, tabState, false);
+            }
+            return;
         }
 
         // storage.onChangedが不安定な環境向け: 親ページ（watch）へ直接通知し、
@@ -410,7 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    ylcApi.onStorageChanged((changes, area) => {
+    const unsubscribeStorageChanged = ylcApi.onStorageChanged((changes, area) => {
         if (area !== 'sync' && area !== 'local') return;
 
         if (area === 'local' && currentStateKey && changes[currentStateKey]) {
@@ -456,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /** ページ内iframe文脈で親へリクエストし、対応するレスポンスを待つ */
     function requestFromParent(requestType, responseType, payload = {}, timeoutMs = 4000) {
         return new Promise(resolve => {
-            if (isToolbarPopup) { resolve(null); return; }
+            if (isToolbarPopup || isInPagePanel) { resolve(null); return; }
             const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
             let settled = false;
             let unsubscribe = null;
@@ -500,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ---- 機能診断 ----
 
     function renderDiagnostics(items) {
-        const list = document.getElementById('diagnosticsList');
+        const list = getById('diagnosticsList');
         if (!list) return;
         list.innerHTML = '';
         for (const item of items) {
@@ -540,11 +554,11 @@ document.addEventListener('DOMContentLoaded', () => {
         add('Google翻訳（background経由）', trOk, trOk ? `結果: ${tr.data.translation}` : (tr.data?.error || tr.reason || ''));
 
         add('LM Studio', lmstudioSupported, lmstudioSupported ? 'この環境では選択可能' : 'この環境では利用不可（iOS/iPadOS相当）');
-        add('設定パネル表示方式', true, isToolbarPopup ? 'ツールバーポップアップ' : 'ページ内iframe');
+        add('設定パネル表示方式', true, isToolbarPopup ? 'ツールバーポップアップ' : (isInPagePanel ? 'ページ内Shadow DOM' : 'ページ内iframe'));
         add('設定の保存方式', true, persistViaParent ? '親ページ代行（このパネルからstorage不可）' : '直接保存');
         add('状態キー', true, currentStateKey || '(未解決)');
 
-        if (!isToolbarPopup) {
+        if (!isToolbarPopup && !isInPagePanel) {
             const parentInfo = await requestParentDiagnostics();
             if (parentInfo) {
                 add('hidden live_chat iframe',
@@ -569,7 +583,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderDiagnostics(items);
     }
 
-    const runDiagnosticsBtn = document.getElementById('runDiagnosticsBtn');
+    const runDiagnosticsBtn = getById('runDiagnosticsBtn');
     if (runDiagnosticsBtn) {
         runDiagnosticsBtn.addEventListener('click', async () => {
             runDiagnosticsBtn.disabled = true;
@@ -586,16 +600,19 @@ document.addEventListener('DOMContentLoaded', () => {
     (async () => {
         currentStateKey = await ylcApi.resolveStateKey(urlStateKey);
 
-        // storageが使えない環境では親に読み出しを代行させる
-        const storageUsable = await probeStorageUsable();
-        if (!storageUsable && !isToolbarPopup) {
-            const remote = await requestParentSettings();
-            if (remote && remote.settings) {
-                persistViaParent = true;
-                const { updatedAt, ...tabStateValues } = remote.tabState || {};
-                loadSettings({ ...remote.settings, ...tabStateValues });
-                populateProfiles(remote.settings.profiles);
-                return;
+        // storageが使えない環境では親に読み出しを代行させる（ページ内iframe文脈のみ）。
+        // inpage（Shadow DOM）はcontent scriptと同一文脈でstorageを直接使えるため対象外
+        if (!isToolbarPopup && !isInPagePanel) {
+            const storageUsable = await probeStorageUsable();
+            if (!storageUsable) {
+                const remote = await requestParentSettings();
+                if (remote && remote.settings) {
+                    persistViaParent = true;
+                    const { updatedAt, ...tabStateValues } = remote.tabState || {};
+                    loadSettings({ ...remote.settings, ...tabStateValues });
+                    populateProfiles(remote.settings.profiles);
+                    return;
+                }
             }
         }
 
@@ -605,4 +622,25 @@ document.addEventListener('DOMContentLoaded', () => {
         loadSettings({ ...storedSettings, ...tabStateValues });
         populateProfiles(storedSettings.profiles);
     })();
-});
+
+    return {
+        /** Shadow DOMパネルを閉じる際に呼ぶ。storage監視リスナー等を解除する */
+        dispose() {
+            if (typeof unsubscribeStorageChanged === 'function') unsubscribeStorageChanged();
+        },
+    };
+}
+
+if (typeof window !== 'undefined') {
+    window.initSettingsPanel = initSettingsPanel;
+    const initStandalonePopupIfPresent = () => {
+        if (document.body && document.body.hasAttribute('data-ylc-popup')) {
+            initSettingsPanel(document, {});
+        }
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initStandalonePopupIfPresent);
+    } else {
+        initStandalonePopupIfPresent();
+    }
+}

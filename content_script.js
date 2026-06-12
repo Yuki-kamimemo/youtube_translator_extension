@@ -19,10 +19,14 @@ let chatObserverScriptReady = false;
 let directChatObservation = false;
 let settingsPanelCleanup = null;
 let settingsPanelScrollLock = null;
+let settingsPanelTemplatePromise = null;
+let settingsPanelDispose = null;
 let hiddenChatWaitObserver = null;
 let chatFrameAttrObserver = null;
 let pageStateGeneration = 0;
 const managedTimeouts = new Set();
+// モバイル判定に使う幅の閾値（shouldUseShadowSettingsPanel と isMobile で共用）
+const MOBILE_PANEL_MAX_WIDTH = 768;
 
 const DEFAULTS = {
     translator: 'google',
@@ -256,27 +260,39 @@ function createToggleButton(id, settingKey, labelPrefix, parentContainer) {
 function toggleSettingsPanel() {
     const panel = document.getElementById('ylc-settings-panel');
     if (!panel) {
-        if (shouldOpenSettingsAsTopLevelPage() && openSettingsAsTopLevelPage()) return;
         createSettingsPanel();
     } else {
         removeSettingsPanel();
     }
 }
 
-function shouldOpenSettingsAsTopLevelPage() {
+// 拡張ページのiframe埋め込みが効かない環境（iOS/iPadOS系）は幅に関わらずShadow DOM方式を使う
+function shouldUseShadowSettingsPanel() {
+    if (ylcApi.isAppleTouchEnvironment()) return true;
     const coarsePointer = typeof window.matchMedia === 'function' &&
         window.matchMedia('(pointer: coarse)').matches;
-    return window.innerWidth <= 768 && coarsePointer;
+    return window.innerWidth <= MOBILE_PANEL_MAX_WIDTH && coarsePointer;
 }
 
-function openSettingsAsTopLevelPage() {
-    const url = `${ylcApi.getRuntimeUrl('popup.html')}?ylcStateKey=${encodeURIComponent(stateKey || '')}`;
-    try {
-        const opened = window.open(url, '_blank', 'noopener');
-        return !!opened;
-    } catch (e) {
-        return false;
+async function getSettingsPanelTemplateHtml() {
+    if (!settingsPanelTemplatePromise) {
+        settingsPanelTemplatePromise = fetch(ylcApi.getRuntimeUrl('popup.html'))
+            .then(response => {
+                if (!response.ok) throw new Error(`Failed to load popup template: ${response.status}`);
+                return response.text();
+            })
+            .then(html => {
+                const parsed = new DOMParser().parseFromString(html, 'text/html');
+                parsed.querySelectorAll('script').forEach(script => script.remove());
+                return parsed.body.innerHTML;
+            })
+            .catch((error) => {
+                // 失敗をキャッシュしない（次回のパネル表示で再試行できるようにする）
+                settingsPanelTemplatePromise = null;
+                throw error;
+            });
     }
+    return settingsPanelTemplatePromise;
 }
 
 function saveSettingsPanelLayout(panel) {
@@ -353,13 +369,73 @@ function createSettingsPanel() {
     closeButton.textContent = '×';
     closeButton.onclick = () => removeSettingsPanel();
     header.appendChild(closeButton);
-    const iframe = document.createElement('iframe');
-    // popup側がタブIDを取得できない環境でも親と同じ状態キーを参照できるよう、クエリで渡す
-    iframe.src = `${ylcApi.getRuntimeUrl('popup.html')}?ylcStateKey=${encodeURIComponent(stateKey || '')}`;
-    iframe.id = 'ylc-settings-iframe';
-    iframe.setAttribute('scrolling', 'yes');
     panel.appendChild(header);
-    panel.appendChild(iframe);
+
+    const useShadowPanel = shouldUseShadowSettingsPanel();
+    let shadowHost = null;
+    let disposed = false;
+    if (useShadowPanel) {
+        shadowHost = document.createElement('div');
+        shadowHost.id = 'ylc-settings-shadow-body';
+        panel.appendChild(shadowHost);
+        const shadowRoot = shadowHost.attachShadow({ mode: 'open' });
+        const stylesheet = document.createElement('link');
+        stylesheet.rel = 'stylesheet';
+        stylesheet.href = ylcApi.getRuntimeUrl('popup.css');
+        shadowRoot.appendChild(stylesheet);
+
+        const loadShadowPanelContent = () => {
+            getSettingsPanelTemplateHtml().then((templateHtml) => {
+                if (disposed || !document.getElementById('ylc-settings-panel')) return;
+                // 再試行時に前回の注入が残っていたら二重描画を防ぐ
+                shadowRoot.getElementById('ylc-settings-shadow-content')?.remove();
+                const templateContainer = document.createElement('div');
+                templateContainer.id = 'ylc-settings-shadow-content';
+                templateContainer.innerHTML = templateHtml;
+                shadowRoot.appendChild(templateContainer);
+                // popup.jsはmanifestで先に読み込まれる同一worldのスクリプトなので直接呼べる
+                const panelHandle = initSettingsPanel(shadowRoot, {
+                    context: 'inpage',
+                    stateKey,
+                    onSettingsSaved: (newSettings, tabState, persist) => {
+                        applySettingsUpdate(newSettings, tabState, persist === true);
+                    },
+                });
+                settingsPanelDispose = panelHandle && typeof panelHandle.dispose === 'function'
+                    ? () => panelHandle.dispose()
+                    : null;
+            }).catch((error) => {
+                console.error('[YLC Enhancer] Failed to create Shadow DOM settings panel:', error);
+                if (disposed || !document.getElementById('ylc-settings-panel')) return;
+                renderShadowPanelError();
+            });
+        };
+
+        const renderShadowPanelError = () => {
+            const existing = shadowRoot.getElementById('ylc-settings-shadow-error');
+            if (existing) existing.remove();
+            const errorBox = document.createElement('div');
+            errorBox.id = 'ylc-settings-shadow-error';
+            errorBox.textContent = '設定画面の読み込みに失敗しました。';
+            const retryButton = document.createElement('button');
+            retryButton.textContent = '再試行';
+            retryButton.onclick = () => {
+                errorBox.remove();
+                loadShadowPanelContent();
+            };
+            errorBox.appendChild(retryButton);
+            shadowRoot.appendChild(errorBox);
+        };
+
+        loadShadowPanelContent();
+    } else {
+        const iframe = document.createElement('iframe');
+        // popup側がタブIDを取得できない環境でも親と同じ状態キーを参照できるよう、クエリで渡す
+        iframe.src = `${ylcApi.getRuntimeUrl('popup.html')}?ylcStateKey=${encodeURIComponent(stateKey || '')}`;
+        iframe.id = 'ylc-settings-iframe';
+        iframe.setAttribute('scrolling', 'yes');
+        panel.appendChild(iframe);
+    }
     document.body.appendChild(backdrop);
     document.body.appendChild(panel);
 
@@ -388,7 +464,7 @@ function createSettingsPanel() {
     let isDragging = false;
     let offsetX, offsetY;
 
-    const isMobile = () => window.innerWidth <= 768;
+    const isMobile = () => window.innerWidth <= MOBILE_PANEL_MAX_WIDTH;
 
     header.onmousedown = (e) => {
         if (isMobile()) return; // モバイル幅ではドラッグ開始しない
@@ -445,6 +521,11 @@ function createSettingsPanel() {
     resizeObserver.observe(panel);
 
     settingsPanelCleanup = () => {
+        disposed = true;
+        if (settingsPanelDispose) {
+            settingsPanelDispose();
+            settingsPanelDispose = null;
+        }
         clearTimeout(layoutSaveTimer);
         resizeObserver.disconnect();
         document.removeEventListener('mousemove', onMouseMove);

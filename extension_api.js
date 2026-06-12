@@ -91,9 +91,11 @@ var ylcApi = (() => {
     function onStorageChanged(callback) {
         try {
             api.storage.onChanged.addListener(callback);
-            return true;
+            return () => {
+                try { api.storage.onChanged.removeListener(callback); } catch { /* 解除失敗は無視 */ }
+            };
         } catch {
-            return false;
+            return null;
         }
     }
 

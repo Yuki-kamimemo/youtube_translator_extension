@@ -36,6 +36,7 @@
                 "extension_api.js",
                 "translation.js",
                 "flow.js",
+                "popup.js",
                 "content_script.js"
             ],
             "css": [
