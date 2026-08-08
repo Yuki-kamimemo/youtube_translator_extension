@@ -11,11 +11,12 @@
 function shouldSkipTranslation(text) {
     if (!text || !text.trim()) return true;
     const trimmedText = text.trim();
-    const hasJapanese = /[一-龠ぁ-んァ-ヶー]/.test(trimmedText);
+    const hasJapanese = /[\p{Script_Extensions=Han}ぁ-んァ-ヶー]/u.test(trimmedText);
     const hasLatin = /\p{Script=Latin}/u.test(trimmedText);
     const hasOtherForeignScript = hasTranslatableForeignText(trimmedText) && !hasLatin;
-    // 日本語だけのコメントは不要だが、英語名や外国語を含む混在文は翻訳対象にする。
-    if (hasJapanese && !hasLatin && !hasOtherForeignScript) return true;
+    // ライブチャットの短い漢字文は日中判定が不安定で、日本語文中の英単語も
+    // 固有名詞・作品名であることが多い。日本語文字を1文字でも含む文は翻訳しない。
+    if (hasJapanese) return true;
     if (/^(w|ｗ|草)+$/i.test(trimmedText)) return true;
     if (/^https?:\/\/[^\s]+$/.test(trimmedText)) return true;
     if (/^[ｦ-ﾟ\d\s\p{P}\p{S}]+$/u.test(trimmedText)) return true;
@@ -31,12 +32,7 @@ function shouldSkipTranslation(text) {
 function hasTranslatableForeignText(text) {
     const value = String(text || '');
     const hasLatin = /\p{Script=Latin}/u.test(value);
-    const hasKana = /[ぁ-んァ-ヶー]/.test(value);
-    // かなを含む文ではHanも日本語として扱う。Hanだけの文は日中判別不能なので
-    // backgroundのdetectLanguageへ渡し、中国語を入口で失わないようにする。
-    const withoutKnownJapanese = hasKana
-        ? value.replace(/[一-龠ぁ-んァ-ヶー]/g, '')
-        : value.replace(/[ぁ-んァ-ヶー]/g, '');
+    const withoutKnownJapanese = value.replace(/[\p{Script_Extensions=Han}ぁ-んァ-ヶー]/gu, '');
     const withoutLatin = withoutKnownJapanese.replace(/\p{Script=Latin}/gu, '');
     return hasLatin || /\p{L}/u.test(withoutLatin);
 }

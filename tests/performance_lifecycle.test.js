@@ -12,14 +12,21 @@ const shouldSkip = vm.runInContext('shouldSkipTranslation', sandbox);
 const createBatcher = vm.runInContext('createChatMutationBatcher', sandbox);
 
 assert.strictEqual(shouldSkip('これは日本語です'), true);
-assert.strictEqual(shouldSkip('Hello 草'), false);
+assert.strictEqual(shouldSkip('最高'), true);
+assert.strictEqual(shouldSkip('今日配信最高'), true);
+assert.strictEqual(shouldSkip('髙橋と𠮷野家'), true);
+assert.strictEqual(shouldSkip('Hello 草'), true);
+assert.strictEqual(shouldSkip('これはAmazing'), true);
+assert.strictEqual(shouldSkip('FF14楽しい'), true);
+assert.strictEqual(shouldSkip('Hello everyone'), false);
+assert.strictEqual(shouldSkip('I'), true); // 1文字Latin投稿は従来どおりノイズ扱い
 assert.strictEqual(shouldSkip('안녕하세요'), false);
 assert.strictEqual(shouldSkip('Привет'), false);
 
 for (const sample of ['\u1230\u120b\u121d', '\u09ac\u09be\u0982\u09b2\u09be', '\u03b3\u03b5\u03b9\u03ac', '\u05e9\u05dc\u05d5\u05dd', '\u0ba4\u0bae\u0bbf\u0bb4\u0bcd']) {
     assert.strictEqual(shouldSkip(sample), false);
 }
-assert.strictEqual(shouldSkip('\u4f60\u597d'), false);
+assert.strictEqual(shouldSkip('\u4f60\u597d'), true);
 assert.strictEqual(shouldSkip('\u65e5\u672c\u8a9e\u3067\u3059'), true);
 
 const nodes = Array.from({ length: 1000 }, (_, index) => ({
