@@ -42,6 +42,19 @@ YouTubeの動画ページを開くと、動画プレーヤー上に操作ボタ�
 * **Google翻訳**: APIキー不要で利用できます。
 * **LM Studio**: `http://localhost:1234` のローカルAPIを使います。LM Studio側でローカルサーバーを起動し、モデルを用意してください。設定画面の「更新」でモデル一覧を取得し、選択したモデルを起動/停止できます。
 
+#### TranslateGemma 4B（PC版）
+
+翻訳専用モデルとして、[`mradermacher/translategemma-4b-it-GGUF`](https://huggingface.co/mradermacher/translategemma-4b-it-GGUF) の `Q4_K_S`（約2.38GB）を検証対象にしています。
+
+1. Hugging FaceからQ4_K_SのGGUFを取得し、LM Studioへ登録します。
+2. LM Studioの「My Models」でTranslateGemmaを開き、モデル設定の「Prompt Template」を上書きします。内容には、このリポジトリの `translategemma_lmstudio_template.jinja` をそのまま貼り付けて保存します。
+3. LM Studioでローカルサーバーを起動します。
+4. 拡張機能の「LM Studio」設定で「更新」を押し、TranslateGemmaモデルを選択します。
+5. 「LM Studioモデルを起動」をオンにします。
+6. 「TranslateGemma最適化: 適用中」と表示されることを確認します。
+
+TranslateGemmaの公式GGUFテンプレートは、LM Studioのllama.cppエンジンが行うロード時の自動パーサー生成に対応していません。そのため上記の単純なGemmaテンプレートへ置き換え、拡張側から言語コードを含む非公式のLM Studio互換プロンプトを送ります。公式chat templateそのものではないため、正式な検証対象は上記Q4_K_Sとし、他の量子化形式は保証対象外です。TranslateGemma選択時は原文言語を自動判定し、言語を信頼できる精度で判定できない場合や、モデルが対応しない言語の場合は、フォールバック設定がオンならGoogle翻訳を使用します。他のLM Studioモデルを選択した場合は従来の汎用プロンプトが使われます。スマートフォン環境ではLM Studio連携は利用できません。
+
 LM Studio翻訳に失敗した場合、設定によりGoogle翻訳へ自動フォールバックできます。翻訳結果は短時間キャッシュされ、同じコメントの重複翻訳を抑えます。
 
 ### ユーザー辞書

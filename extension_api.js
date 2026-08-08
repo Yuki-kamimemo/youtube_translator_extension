@@ -15,7 +15,7 @@ var ylcApi = (() => {
 
     // 拡張レイヤー内部でstorageに置くキー。設定変更の監視対象から除外する
     const INTERNAL_KEY_PREFIXES = ['tabState_', 'sessionState_'];
-    const INTERNAL_KEYS = ['globalState', 'settingsPanelLayout', 'ylcMigratedFromSync', 'ylcProbe', 'ylcDiagProbe'];
+    const INTERNAL_KEYS = ['globalState', 'settingsPanelLayout', 'ylcMigratedFromSync', 'ylcSettingsArea', 'ylcProbe', 'ylcDiagProbe'];
 
     // sessionState/tabStateの鮮度上限。tabs.onRemovedによる掃除が効かない環境での残留対策
     const STATE_TTL = 12 * 60 * 60 * 1000;
@@ -128,6 +128,16 @@ var ylcApi = (() => {
     let resolvedSettingsArea = null;
     let settingsAreaPromise = null;
 
+    // popup/watch/live_chatは別々のJSコンテキストなので、どこか一つがlocalへ
+    // 切り替えたら、既にsync解決済みのコンテキストも即座に追従させる。
+    try {
+        api?.storage?.onChanged?.addListener((changes, areaName) => {
+            if (areaName !== 'local' || changes?.ylcSettingsArea?.newValue !== 'local') return;
+            resolvedSettingsArea = 'local';
+            settingsAreaPromise = Promise.resolve('local');
+        });
+    } catch { /* storage change監視非対応環境 */ }
+
     async function migrateSyncToLocalOnce() {
         const marker = await storageOp('local', 'get', 'ylcMigratedFromSync').catch(() => null);
         if (marker?.ylcMigratedFromSync) return;
@@ -146,14 +156,29 @@ var ylcApi = (() => {
     }
 
     async function resolveSettingsArea() {
+        // 一度localへ切り替えた後は、別フレームや再起動でも同じ保存先を使う。
+        // syncが一時的に復旧しても、localの新しい値をコピーせず旧syncへ戻してはならない。
+        const persisted = await storageOp('local', 'get', 'ylcSettingsArea').catch(() => null);
+        if (persisted?.ylcSettingsArea === 'local') {
+            resolvedSettingsArea = 'local';
+            return resolvedSettingsArea;
+        }
         try {
             await storageOp('sync', 'set', { ylcProbe: Date.now() });
             storageOp('sync', 'remove', 'ylcProbe').catch(() => {});
+            // probe待機中に別コンテキストがquota超過でlocalへ切り替えた場合、
+            // 古いprobe結果で保存先をsyncへ巻き戻さない。
+            const latest = await storageOp('local', 'get', 'ylcSettingsArea').catch(() => null);
+            if (latest?.ylcSettingsArea === 'local') {
+                resolvedSettingsArea = 'local';
+                return resolvedSettingsArea;
+            }
             resolvedSettingsArea = 'sync';
         } catch {
             // syncに書けない環境。読めた既存値は一度だけlocalへ移行する
             await migrateSyncToLocalOnce().catch(() => {});
             resolvedSettingsArea = 'local';
+            await storageOp('local', 'set', { ylcSettingsArea: 'local' }).catch(() => {});
         }
         return resolvedSettingsArea;
     }
@@ -191,7 +216,8 @@ var ylcApi = (() => {
             if (area === 'sync') {
                 // 途中からsyncが書けなくなった場合（容量超過等）はlocalへ切り替える
                 try {
-                    await storageOp('local', 'set', values);
+                    // markerと設定値を同じ変更バッチで通知し、他フレームが新値を取りこぼさないようにする。
+                    await storageOp('local', 'set', { ...values, ylcSettingsArea: 'local' });
                     resolvedSettingsArea = 'local';
                     settingsAreaPromise = Promise.resolve('local');
                     return true;

@@ -9,8 +9,20 @@ const translationCache = new Map();
 const pendingTranslations = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5分
 const MAX_CACHE_SIZE = 1000;
-const CACHE_VERSION = 'lmstudio-clean-v5';
+const CACHE_VERSION = 'lmstudio-clean-v7';
 const LMSTUDIO_ENDPOINT = 'http://localhost:1234';
+const LANGUAGE_CACHE_MAX = 300;
+const detectedLanguageCache = new Map();
+
+// TranslateGemmaのchat templateが受け付ける主要なISO 639-1コード。
+// detectLanguageが返す地域付きコードは基本言語へ正規化して照合する。
+const TRANSLATEGEMMA_SUPPORTED_LANGUAGES = new Set([
+    'af', 'am', 'ar', 'be', 'bg', 'bn', 'ca', 'cs', 'da', 'de', 'el', 'en',
+    'es', 'et', 'fa', 'fi', 'fr', 'ga', 'gu', 'he', 'hi', 'hr', 'hu',
+    'id', 'is', 'it', 'ja', 'kn', 'ko', 'lt', 'lv', 'ml', 'mr', 'ms', 'nl',
+    'no', 'pa', 'pl', 'pt', 'ro', 'ru', 'sk', 'sl', 'sr', 'sv', 'sw', 'ta',
+    'te', 'th', 'tl', 'tr', 'uk', 'ur', 'vi', 'zh'
+]);
 
 const SETTINGS_DEFAULTS = {
     translator: 'google',
@@ -33,6 +45,212 @@ function normalizeSettings(settings) {
     normalized.lmstudioModel = normalized.lmstudioModel || '';
     normalized.lmstudioModelActive = normalized.lmstudioModelActive === true;
     return normalized;
+}
+
+function isTranslateGemmaModel(modelId) {
+    const normalized = String(modelId || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return normalized.includes('translategemma') &&
+        /(?:^|-)4b(?:-|$)/.test(normalized) &&
+        /(?:^|-)it(?:-|$)/.test(normalized);
+}
+
+function normalizeDetectedLanguage(language) {
+    const aliases = { iw: 'he', in: 'id' };
+    const detected = String(language || '').toLowerCase().split(/[-_]/)[0];
+    const base = aliases[detected] || detected;
+    if (!/^[a-z]{2}$/.test(base)) return null;
+    return TRANSLATEGEMMA_SUPPORTED_LANGUAGES.has(base) ? base : null;
+}
+
+function isLanguageScriptCompatible(text, language) {
+    const scripts = {
+        cyrillic: /[\u0400-\u04ff]/,
+        korean: /[\uac00-\ud7a3]/,
+        thai: /[\u0e00-\u0e7f]/,
+        arabic: /[\u0600-\u06ff]/,
+        devanagari: /[\u0900-\u097f]/,
+        ethiopic: /[\u1200-\u137f]/,
+        bengali: /[\u0980-\u09ff]/,
+        greek: /[\u0370-\u03ff]/,
+        gujarati: /[\u0a80-\u0aff]/,
+        hebrew: /[\u0590-\u05ff]/,
+        kannada: /[\u0c80-\u0cff]/,
+        malayalam: /[\u0d00-\u0d7f]/,
+        gurmukhi: /[\u0a00-\u0a7f]/,
+        tamil: /[\u0b80-\u0bff]/,
+        telugu: /[\u0c00-\u0c7f]/,
+        japanese: /[\u3040-\u30ff\u3400-\u9fff]/,
+        latin: /[a-zA-Z\u00c0-\u024f]/
+    };
+    if (language === 'sr') return scripts.cyrillic.test(text) || scripts.latin.test(text);
+    const expected = new Map([
+        ['ru', 'cyrillic'], ['uk', 'cyrillic'], ['bg', 'cyrillic'], ['be', 'cyrillic'],
+        ['ko', 'korean'], ['th', 'thai'], ['ar', 'arabic'], ['fa', 'arabic'], ['ur', 'arabic'],
+        ['hi', 'devanagari'], ['mr', 'devanagari'], ['ja', 'japanese'], ['zh', 'japanese'],
+        ['am', 'ethiopic'], ['bn', 'bengali'], ['el', 'greek'], ['gu', 'gujarati'], ['he', 'hebrew'],
+        ['kn', 'kannada'], ['ml', 'malayalam'], ['pa', 'gurmukhi'], ['ta', 'tamil'], ['te', 'telugu']
+    ]).get(language) || 'latin';
+    // ライブチャットでは人名など別scriptが混在するため、期待scriptが本文にあれば許可する。
+    return scripts[expected].test(text);
+}
+
+function detectLanguage(text) {
+    if (!text || typeof chrome?.i18n?.detectLanguage !== 'function') return Promise.resolve(null);
+    if (detectedLanguageCache.has(text)) return Promise.resolve(detectedLanguageCache.get(text));
+    return new Promise(resolve => {
+        try {
+            chrome.i18n.detectLanguage(text, result => {
+                const top = result?.languages?.[0];
+                // 短いライブチャットではisReliable/percentageが低くても第1候補は有用。
+                // 対応言語の第1候補を採用し、候補自体がないASCII文だけ英語へ寄せる。
+                let language = normalizeDetectedLanguage(top?.language);
+                const percentage = Number(top?.percentage) || 0;
+                if (percentage < 20 || !isLanguageScriptCompatible(text, language)) language = null;
+                const nonLatinText = String(text).replace(/\p{Script=Latin}/gu, '');
+                if (!language && /[a-zA-Z].*[a-zA-Z]/.test(text) && !/\p{L}/u.test(nonLatinText)) {
+                    language = 'en';
+                }
+                if (detectedLanguageCache.size >= LANGUAGE_CACHE_MAX) {
+                    detectedLanguageCache.delete(detectedLanguageCache.keys().next().value);
+                }
+                detectedLanguageCache.set(text, language);
+                resolve(language);
+            });
+        } catch {
+            resolve(null);
+        }
+    });
+}
+
+function fingerprint(value) {
+    let hash = 2166136261;
+    const input = String(value || '');
+    for (let i = 0; i < input.length; i++) {
+        hash ^= input.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+}
+
+function buildTranslationCacheKey(text, settings, route, sourceLanguage = '') {
+    return [
+        CACHE_VERSION,
+        route,
+        route === 'lmstudio' ? (settings.lmstudioModel || '') : '',
+        sourceLanguage,
+        fingerprint(settings.dictionary || ''),
+        text
+    ].join(':');
+}
+
+const LIVE_CHAT_STYLE_INSTRUCTIONS = `Use concise, natural, casual Japanese, not formal, polite, literary, or instructional language. ` +
+    `Keep the translation close to the source length and energy. ` +
+    `Preserve names, handles, titles, abbreviations, emotes, stylized spellings, capitalization-based emphasis, ` +
+    `and unknown terms when their meaning is uncertain. ` +
+    `Copy names, handles, and mixed-case or stylized tokens exactly as written; do not translate, transliterate, split, or normalize them. ` +
+    `Do not add subjects, honorifics, definitions, explanations, inferred context, or information not present in the source. ` +
+    `Do not expand abbreviations or give multiple dictionary meanings. ` +
+    `Keep questions, fragments, repetition, laughter, and incomplete sentences in the same form and tone as the source.`;
+
+function buildTranslateGemmaRequest(model, text, sourceLanguage) {
+    let sourceLanguageName = sourceLanguage.toUpperCase();
+    try {
+        sourceLanguageName = new Intl.DisplayNames(['en'], { type: 'language' }).of(sourceLanguage) || sourceLanguageName;
+    } catch { /* DisplayNames未対応時は言語コードを使う */ }
+    const prompt = `Translate this YouTube live chat message from ${sourceLanguageName} (${sourceLanguage}) to Japanese (ja).\n` +
+        `${LIVE_CHAT_STYLE_INSTRUCTIONS} Output one translation only.\n\n\n${text}`;
+    return {
+        model,
+        messages: [{
+            role: 'user',
+            content: prompt
+        }],
+        temperature: 0,
+        max_tokens: 128,
+        stream: false
+    };
+}
+
+function buildDefaultLmstudioRequest(model, text) {
+    const systemPrompt = `You are a YouTube live chat translator. ` +
+        `${LIVE_CHAT_STYLE_INSTRUCTIONS} ` +
+        `Output only the Japanese translation. No labels, original text, markdown, or reasoning.`;
+    return {
+        model,
+        input: text,
+        system_prompt: systemPrompt,
+        reasoning: 'off',
+        temperature: 0,
+        max_output_tokens: 80,
+        stream: false,
+        store: false
+    };
+}
+
+function buildDefaultLmstudioCompatibilityRequest(model, text) {
+    const nativeRequest = buildDefaultLmstudioRequest(model, text);
+    return {
+        model,
+        messages: [
+            { role: 'system', content: nativeRequest.system_prompt.replace('Output only the Japanese translation.', 'Output only a JSON object matching the required schema.') },
+            { role: 'user', content: text }
+        ],
+        temperature: 0,
+        max_tokens: 80,
+        stream: false,
+        response_format: {
+            type: 'json_schema',
+            json_schema: {
+                name: 'chat_translation',
+                strict: true,
+                schema: {
+                    type: 'object',
+                    properties: {
+                        translation: { type: 'string' }
+                    },
+                    required: ['translation'],
+                    additionalProperties: false
+                }
+            }
+        }
+    };
+}
+
+function cleanupTranslateGemmaTranslation(output, sourceText = '') {
+    const text = String(output || '')
+        .replace(/```(?:\w+)?/g, '')
+        .replace(/```/g, '')
+        .replace(/^(?:translation|translated text|翻訳|日本語訳)\s*[:：-]\s*/i, '')
+        .trim();
+    if (!text || text === String(sourceText || '').trim()) return '';
+    return text;
+}
+
+function storageGet(areaName, keys) {
+    return new Promise((resolve, reject) => {
+        const area = chrome?.storage?.[areaName];
+        if (!area?.get) { reject(new Error(`storage.${areaName} unavailable`)); return; }
+        try {
+            const maybePromise = area.get(keys, value => {
+                const error = chrome.runtime?.lastError;
+                if (error) reject(new Error(error.message));
+                else resolve(value || {});
+            });
+            if (maybePromise?.then) maybePromise.then(value => resolve(value || {}), reject);
+        } catch (error) { reject(error); }
+    });
+}
+
+async function loadTranslationSettings() {
+    const marker = await storageGet('local', ['ylcSettingsArea', 'ylcMigratedFromSync']).catch(() => ({}));
+    if (marker?.ylcSettingsArea === 'local' || (!marker?.ylcSettingsArea && marker?.ylcMigratedFromSync)) {
+        return normalizeSettings(await storageGet('local', SETTINGS_DEFAULTS).catch(() => ({ ...SETTINGS_DEFAULTS })));
+    }
+    try {
+        return normalizeSettings(await storageGet('sync', SETTINGS_DEFAULTS));
+    } catch {
+        return normalizeSettings(await storageGet('local', SETTINGS_DEFAULTS).catch(() => ({ ...SETTINGS_DEFAULTS })));
+    }
 }
 
 const LMSTUDIO_HEADERS = { 'Content-Type': 'application/json' };
@@ -79,6 +297,8 @@ function extractLmstudioText(data) {
 function getQuickChatTranslation(text) {
     const normalized = (text || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
     if (!normalized) return '';
+    const universalReaction = getUniversalQuickReaction(normalized);
+    if (universalReaction !== null) return universalReaction;
     const lower = normalized.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
     const compact = normalized.replace(/\s+/g, '');
     const compactLower = lower.replace(/\s+/g, '');
@@ -252,7 +472,7 @@ function purgeExpiredCacheThrottled() {
 // preprocessForYouTubeChat / preprocessWithDictionary / postprocessJapanese /
 // translateWithGoogle は translation.js（共有）で定義される
 
-async function translateWithLmstudio(text, settings) {
+async function translateWithLmstudio(text, settings, sourceLanguage = '') {
     const endpoint = LMSTUDIO_ENDPOINT;
     const model = settings.lmstudioModel;
     if (!model) throw new Error('LM Studio model is not selected');
@@ -260,50 +480,41 @@ async function translateWithLmstudio(text, settings) {
     const quickTranslation = getQuickChatTranslation(text);
     if (quickTranslation !== null) return { translation: quickTranslation };
 
-    const systemPrompt = `You are a YouTube live chat translator.
-Translate the user message into natural casual Japanese.
-Output ONLY a JSON object: {"translation":"<japanese>"}.
-No explanation. No labels. No original text. No markdown. No reasoning.
-For short reactions use 草 / マジか / やった / うん / お願い.
-Keep names like Vox unchanged.`;
-    const body = {
-        model,
-        messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: text }
-        ],
-        temperature: 0,
-        max_tokens: 80,
-        stream: false,
-        response_format: {
-            type: 'json_schema',
-            json_schema: {
-                name: 'chat_translation',
-                strict: true,
-                schema: {
-                    type: 'object',
-                    properties: {
-                        translation: { type: 'string' }
-                    },
-                    required: ['translation'],
-                    additionalProperties: false
-                }
-            }
-        }
-    };
+    const translateGemma = isTranslateGemmaModel(model);
+    let body = translateGemma
+        ? buildTranslateGemmaRequest(model, text, sourceLanguage)
+        : buildDefaultLmstudioRequest(model, text);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
-        const response = await fetch(`${endpoint}/v1/chat/completions`, {
+        let response = await fetch(`${endpoint}${translateGemma ? '/v1/chat/completions' : '/api/v1/chat'}`, {
             method: 'POST',
             headers: LMSTUDIO_HEADERS,
             body: JSON.stringify(body),
             signal: controller.signal
         });
+        if (!translateGemma && !response.ok) {
+            const detail = await response.text().catch(() => '');
+            if (response.status === 400 && /reasoning/i.test(detail)) {
+                body = buildDefaultLmstudioCompatibilityRequest(model, text);
+                response = await fetch(`${endpoint}/v1/chat/completions`, {
+                    method: 'POST',
+                    headers: LMSTUDIO_HEADERS,
+                    body: JSON.stringify(body),
+                    signal: controller.signal
+                });
+            } else {
+                throw new Error(detail || `LM Studio HTTP ${response.status}`);
+            }
+        }
         if (!response.ok) throw new Error(`LM Studio HTTP ${response.status}`);
         const data = await response.json();
-        const raw = data?.choices?.[0]?.message?.content || '';
-        const out = parseStructuredTranslation(raw, text) || cleanupLmstudioTranslation(raw, text);
+        const raw = translateGemma
+            ? (data?.choices?.[0]?.message?.content || '')
+            : extractLmstudioText(data);
+        const out = translateGemma
+            ? cleanupTranslateGemmaTranslation(raw, text)
+            : (parseStructuredTranslation(raw, text) || cleanupLmstudioTranslation(raw, text));
         if (!out) throw new Error('LM Studio empty response');
         return { translation: out };
     } finally {
@@ -311,18 +522,61 @@ Keep names like Vox unchanged.`;
     }
 }
 
-async function handleTranslationRequest(text, settings) {
+async function resolveTranslationRoute(text, settings) {
+    const useLmstudio = settings.translator === 'lmstudio' && settings.lmstudioModelActive === true;
+    if (!useLmstudio) return { route: 'google', sourceLanguage: '' };
+    if (!isTranslateGemmaModel(settings.lmstudioModel)) return { route: 'lmstudio', sourceLanguage: '' };
+    const sourceLanguage = await detectLanguage(text);
+    if (sourceLanguage) return { route: 'lmstudio', sourceLanguage };
+    return { route: settings.enableGoogleTranslateFallback ? 'google' : 'unavailable', sourceLanguage: '' };
+}
+
+const UNIVERSAL_QUICK_REACTIONS = Object.freeze({
+    oh: '\u304a\u304a',
+    'oh nice': '\u304a\u3001\u3044\u3044\u306d',
+    nice: '\u3044\u3044\u306d',
+    maybe: '\u305f\u3076\u3093',
+    'hmm maybe': '\u3046\u30fc\u3093\u3001\u305d\u3046\u304b\u3082',
+    'makes sense': '\u306a\u308b\u307b\u3069',
+    cute: '\u304b\u308f\u3044\u3044',
+    wow: '\u308f\u3042',
+    thanks: '\u3042\u308a\u304c\u3068\u3046',
+    'thank you': '\u3042\u308a\u304c\u3068\u3046',
+    'no way': '\u307e\u3055\u304b',
+    yes: '\u3046\u3093',
+    no: '\u3044\u3084'
+});
+
+function getUniversalQuickReaction(text) {
+    const normalized = String(text || '').trim().replace(/[\u2018\u2019]/g, "'");
+    const match = normalized.match(/^([a-z]+(?:[ '\u2019][a-z]+)*)([!?~.]+)?$/i);
+    if (!match) return null;
+    const phrase = match[1].toLowerCase().replace(/\s+/g, ' ');
+    if (!Object.prototype.hasOwnProperty.call(UNIVERSAL_QUICK_REACTIONS, phrase)) return null;
+    const punctuation = String(match[2] || '')
+        .slice(0, 5)
+        .replace(/!/g, '\uff01')
+        .replace(/\?/g, '\uff1f')
+        .replace(/~+/g, '\uff5e')
+        .replace(/\.{2,}/g, '\u2026')
+        .replace(/\.$/, '');
+    return UNIVERSAL_QUICK_REACTIONS[phrase] + punctuation;
+}
+
+async function handleTranslationRequest(text, settings, routeInfo) {
     settings = normalizeSettings(settings);
-    const { translator, lmstudioModelActive, enableGoogleTranslateFallback, dictionary } = settings;
+    const { enableGoogleTranslateFallback, dictionary } = settings;
     let processedText = await preprocessForYouTubeChat(text);
     processedText = preprocessWithDictionary(processedText, dictionary);
     let result;
-    const useLmstudio = translator === 'lmstudio' && lmstudioModelActive === true;
-    let usedTranslator = useLmstudio ? 'lmstudio' : 'google';
+    let usedTranslator = routeInfo.route;
 
-    if (useLmstudio) {
+    if (routeInfo.route === 'unavailable') {
+        return { error: '原文言語を判定できません' };
+    }
+    if (routeInfo.route === 'lmstudio') {
         try {
-            result = await translateWithLmstudio(processedText, settings);
+            result = await translateWithLmstudio(processedText, settings, routeInfo.sourceLanguage);
         } catch (e) {
             if (enableGoogleTranslateFallback) {
                 result = await translateWithGoogle(processedText);
@@ -337,15 +591,7 @@ async function handleTranslationRequest(text, settings) {
     }
 
     const finalResult = usedTranslator === 'google' ? postprocessJapanese(result) : result;
-    if (finalResult && finalResult.translation) {
-        if (translationCache.size >= MAX_CACHE_SIZE) {
-            const firstKey = translationCache.keys().next().value;
-            translationCache.delete(firstKey);
-        }
-        const cacheKey = `${CACHE_VERSION}:${usedTranslator}:${usedTranslator === 'lmstudio' ? (settings.lmstudioModel || '') : ''}:${text}`;
-        translationCache.set(cacheKey, { translation: finalResult.translation, timestamp: Date.now() });
-    }
-    return finalResult;
+    return { result: finalResult, usedTranslator };
 }
 
 async function listLmstudioModels() {
@@ -355,12 +601,19 @@ async function listLmstudioModels() {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    return Array.isArray(data.models)
-        ? data.models
-            .filter(model => model?.type === 'llm')
-            .map(model => model.selected_variant || model.key)
-            .filter(Boolean)
-        : [];
+    const llms = Array.isArray(data.models) ? data.models.filter(model => model?.type === 'llm') : [];
+    const models = llms.map(model => model.selected_variant || model.key).filter(Boolean);
+    const modelDetails = {};
+    for (const model of llms) {
+        const id = model.selected_variant || model.key;
+        if (!id) continue;
+        modelDetails[id] = {
+            publisher: model.publisher || '',
+            quantization: model.quantization?.name || '',
+            format: model.format || '',
+        };
+    }
+    return { models, modelDetails };
 }
 
 async function getLmstudioLoadedInstanceId(model) {
@@ -442,8 +695,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         if (request.action === 'lmstudioListModels') {
             try {
-                const models = await listLmstudioModels();
-                sendResponse({ ok: true, models });
+                const listed = await listLmstudioModels();
+                sendResponse({ ok: true, models: listed.models, modelDetails: listed.modelDetails });
             } catch (e) {
                 sendResponse({ ok: false, error: String(e.message || e) });
             }
@@ -464,7 +717,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     if (response.status === 404) {
                         await warmupLmstudioModel(m);
                     } else if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
+                        let detail = '';
+                        try {
+                            const data = await response.json();
+                            detail = data?.error?.message || data?.message || '';
+                        } catch { /* JSONでないエラー */ }
+                        if (isTranslateGemmaModel(m) && /template|parser|healthy/i.test(detail)) {
+                            throw new Error('TranslateGemma用のLM Studioプロンプトテンプレート設定が必要です。READMEの手順を確認してください。');
+                        }
+                        throw new Error(detail || `HTTP ${response.status}`);
                     }
                 } else if (m) {
                     await unloadLmstudioModel(m);
@@ -479,24 +740,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const text = request.text;
             if (!text) { sendResponse({ error: 'No text' }); return; }
             purgeExpiredCacheThrottled();
-            const settings = normalizeSettings(await new Promise(r => chrome.storage.sync.get(SETTINGS_DEFAULTS, r)));
-            const useLmstudio = settings.translator === 'lmstudio' && settings.lmstudioModelActive === true;
-            const usedTranslator = useLmstudio ? 'lmstudio' : 'google';
-            const cacheKey = `${CACHE_VERSION}:${usedTranslator}:${usedTranslator === 'lmstudio' ? (settings.lmstudioModel || '') : ''}:${text}`;
+            const settings = await loadTranslationSettings();
+            const routeInfo = await resolveTranslationRoute(text, settings);
+            const cacheKey = buildTranslationCacheKey(text, settings, routeInfo.route, routeInfo.sourceLanguage);
             const cached = translationCache.get(cacheKey);
             if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
                 sendResponse({ translation: cached.translation });
                 return;
             }
             if (pendingTranslations.has(cacheKey)) {
-                sendResponse(await pendingTranslations.get(cacheKey));
+                const pendingOutcome = await pendingTranslations.get(cacheKey);
+                const pendingResult = pendingOutcome?.result || pendingOutcome;
+                sendResponse(pendingResult?.translation
+                    ? { ...pendingResult, translator: pendingOutcome?.usedTranslator || routeInfo.route }
+                    : pendingResult);
                 return;
             }
-            const task = handleTranslationRequest(text, settings);
+            const task = handleTranslationRequest(text, settings, routeInfo);
             pendingTranslations.set(cacheKey, task);
             try {
-                const result = await task;
-                sendResponse(result);
+                const outcome = await task;
+                const result = outcome?.result || outcome;
+                if (result?.translation) {
+                    if (translationCache.size >= MAX_CACHE_SIZE) {
+                        translationCache.delete(translationCache.keys().next().value);
+                    }
+                    const finalKey = buildTranslationCacheKey(
+                        text,
+                        settings,
+                        outcome?.usedTranslator || routeInfo.route,
+                        routeInfo.sourceLanguage
+                    );
+                    translationCache.set(finalKey, { translation: result.translation, timestamp: Date.now() });
+                    while (translationCache.size > MAX_CACHE_SIZE) {
+                        translationCache.delete(translationCache.keys().next().value);
+                    }
+                }
+                sendResponse(result?.translation
+                    ? { ...result, translator: outcome?.usedTranslator || routeInfo.route }
+                    : result);
             } finally {
                 pendingTranslations.delete(cacheKey);
             }

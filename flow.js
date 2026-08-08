@@ -11,6 +11,14 @@
 const lanes = new Map();
 const LANE_COUNT = 15;
 const safeContentTemplate = document.createElement('template');
+const flowRemovalTimers = new Set();
+
+function clearFlowComments() {
+    lanes.clear();
+    for (const timer of flowRemovalTimers) clearTimeout(timer);
+    flowRemovalTimers.clear();
+    if (flowContainer) flowContainer.replaceChildren();
+}
 
 /**
  * フローコメントを表示するための空きレーンを探す (メモリ・CPU最適化済)
@@ -122,7 +130,7 @@ function flowComment(data) {
     // 二重の安全策：画面上のフローコメント数が多すぎる場合は描画をスキップ（VODシーク時の暴発対策）。
     // モバイル幅では描画面積・GPU資源が小さいため上限を半分にする
     const MAX_ONSCREEN_COMMENTS = window.innerWidth <= 768 ? 30 : 60;
-    if (flowContainer.childElementCount > MAX_ONSCREEN_COMMENTS) {
+    if (flowContainer.childElementCount >= MAX_ONSCREEN_COMMENTS) {
         return;
     }
 
@@ -202,6 +210,7 @@ function flowComment(data) {
 
     // double-rAF: Read フェーズと Write フェーズを分離して強制同期レイアウドを回避
     requestAnimationFrame(() => {
+        if (!el.isConnected || !flowContainer?.contains(el)) return;
         // READ フェーズ: 前フレームのレイアウト結果を利用（強制 reflow なし）
         let commentWidth = el.offsetWidth;
 
@@ -233,10 +242,15 @@ function flowComment(data) {
         const removeEl = () => {
             if (removed) return;
             removed = true;
+            if (removalTimer) {
+                clearTimeout(removalTimer);
+                flowRemovalTimers.delete(removalTimer);
+            }
             el.style.willChange = 'auto';
             el.remove();
         };
         el.addEventListener('transitionend', removeEl, { once: true });
-        setTimeout(removeEl, settings.flowTime * 1000 + 1500);
+        const removalTimer = setTimeout(removeEl, settings.flowTime * 1000 + 1500);
+        flowRemovalTimers.add(removalTimer);
     });
 }

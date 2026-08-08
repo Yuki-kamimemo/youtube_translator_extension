@@ -11,7 +11,11 @@
 function shouldSkipTranslation(text) {
     if (!text || !text.trim()) return true;
     const trimmedText = text.trim();
-    if (/[一-龠ぁ-んァ-ヶー]/.test(trimmedText)) return true;
+    const hasJapanese = /[一-龠ぁ-んァ-ヶー]/.test(trimmedText);
+    const hasLatin = /\p{Script=Latin}/u.test(trimmedText);
+    const hasOtherForeignScript = hasTranslatableForeignText(trimmedText) && !hasLatin;
+    // 日本語だけのコメントは不要だが、英語名や外国語を含む混在文は翻訳対象にする。
+    if (hasJapanese && !hasLatin && !hasOtherForeignScript) return true;
     if (/^(w|ｗ|草)+$/i.test(trimmedText)) return true;
     if (/^https?:\/\/[^\s]+$/.test(trimmedText)) return true;
     if (/^[ｦ-ﾟ\d\s\p{P}\p{S}]+$/u.test(trimmedText)) return true;
@@ -19,9 +23,77 @@ function shouldSkipTranslation(text) {
     if (/^([a-zA-Z])\1+$/.test(trimmedText)) return true;
     if (/^(xd|lol|lmao|kek|haha|hehe|lul|kekw|lolol)+[!?]*$/i.test(trimmedText)) return true;
     if (/^[\d\s\p{P}\p{S}]+$/u.test(trimmedText)) return true;
-    const alphaCount = (trimmedText.match(/[a-zA-Z]/g) || []).length;
-    if (alphaCount <= 1) return true;
+    const alphaCount = (trimmedText.match(/\p{Script=Latin}/gu) || []).length;
+    if (!hasOtherForeignScript && alphaCount <= 1) return true;
     return false;
+}
+
+function hasTranslatableForeignText(text) {
+    const value = String(text || '');
+    const hasLatin = /\p{Script=Latin}/u.test(value);
+    const hasKana = /[ぁ-んァ-ヶー]/.test(value);
+    // かなを含む文ではHanも日本語として扱う。Hanだけの文は日中判別不能なので
+    // backgroundのdetectLanguageへ渡し、中国語を入口で失わないようにする。
+    const withoutKnownJapanese = hasKana
+        ? value.replace(/[一-龠ぁ-んァ-ヶー]/g, '')
+        : value.replace(/[ぁ-んァ-ヶー]/g, '');
+    const withoutLatin = withoutKnownJapanese.replace(/\p{Script=Latin}/gu, '');
+    return hasLatin || /\p{L}/u.test(withoutLatin);
+}
+
+const YLC_TARGET_CHAT_NODE_TYPES = new Set([
+    'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER',
+    'YT-LIVE-CHAT-PAID-MESSAGE-RENDERER',
+    'YT-LIVE-CHAT-MEMBERSHIP-ITEM-RENDERER',
+    'YT-LIVE-CHAT-PAID-STICKER-RENDERER',
+    'YT-LIVE-CHAT-MEMBERSHIP-GIFT-PURCHASE-RENDERER',
+    'YT-LIVE-CHAT-GIFT-MEMBERSHIP-RECEIVED-RENDERER'
+]);
+
+function collectRecentChatNodes(mutations, limit = 5) {
+    const recent = [];
+    const safeLimit = Math.max(0, Number(limit) || 0);
+    if (safeLimit === 0) return recent;
+    for (const mutation of mutations || []) {
+        for (const node of mutation.addedNodes || []) {
+            if (node?.nodeType !== 1 || !YLC_TARGET_CHAT_NODE_TYPES.has(String(node.tagName || '').toUpperCase())) continue;
+            recent.push(node);
+            if (recent.length > safeLimit) recent.shift();
+        }
+    }
+    return recent;
+}
+
+function createChatMutationBatcher(limit, processNode, scheduleFrame) {
+    const safeLimit = Math.max(0, Number(limit) || 0);
+    const schedule = scheduleFrame || (callback => requestAnimationFrame(callback));
+    let pendingNodes = [];
+    let scheduled = false;
+    let generation = 0;
+    return {
+        push(mutations) {
+            for (const node of collectRecentChatNodes(mutations, safeLimit)) {
+                pendingNodes.push(node);
+                if (pendingNodes.length > safeLimit) pendingNodes.shift();
+            }
+            if (scheduled || pendingNodes.length === 0) return;
+            scheduled = true;
+            const scheduledGeneration = generation;
+            schedule(() => {
+                scheduled = false;
+                if (scheduledGeneration !== generation) return;
+                const nodes = pendingNodes;
+                pendingNodes = [];
+                nodes.forEach(processNode);
+            });
+        },
+        clear() {
+            generation++;
+            pendingNodes = [];
+            scheduled = false;
+        },
+        pendingCount() { return pendingNodes.length; },
+    };
 }
 
 // ---- スラング辞書による前処理 ----
@@ -180,23 +252,48 @@ function isRecentlyFailedTranslation(text) {
 
 const directTranslationCache = new Map();
 const DIRECT_TRANSLATION_CACHE_MAX = 300;
+const DIRECT_TRANSLATION_CACHE_TTL = 5 * 60 * 1000;
+
+function getTranslationCacheContext(settings = {}, routeOverride = '') {
+    const dictionary = String(settings.dictionary || '');
+    let hash = 2166136261;
+    for (let i = 0; i < dictionary.length; i++) {
+        hash ^= dictionary.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    const route = routeOverride ||
+        (settings.translator === 'lmstudio' && settings.lmstudioModelActive === true ? 'lmstudio' : 'google');
+    const model = route === 'lmstudio' ? (settings.lmstudioModel || '') : '';
+    return `${route}:${model}:${hash >>> 0}`;
+}
+
+function directTranslationCacheKey(text, context = '') {
+    return `${context}\u0000${text}`;
+}
 
 /**
  * content script文脈の翻訳結果共有キャッシュ。
  * background経由・直接fetchのどちらの成功結果も保存し、
  * 同一テキスト再出現時のservice worker起床とネットワークを節約する
  */
-function getCachedTranslation(text) {
+function getCachedTranslation(text, context = '') {
     if (!text) return null;
-    return directTranslationCache.get(text) || null;
+    const key = directTranslationCacheKey(text, context);
+    const cached = directTranslationCache.get(key);
+    if (!cached) return null;
+    if (Date.now() - cached.timestamp > DIRECT_TRANSLATION_CACHE_TTL) {
+        directTranslationCache.delete(key);
+        return null;
+    }
+    return cached.translation;
 }
 
-function cacheTranslation(text, translation) {
+function cacheTranslation(text, translation, context = '') {
     if (!text || !translation) return;
     if (directTranslationCache.size >= DIRECT_TRANSLATION_CACHE_MAX) {
         directTranslationCache.delete(directTranslationCache.keys().next().value);
     }
-    directTranslationCache.set(text, translation);
+    directTranslationCache.set(directTranslationCacheKey(text, context), { translation, timestamp: Date.now() });
 }
 
 /**
@@ -211,7 +308,8 @@ async function translateDirectWithGoogle(text, dictionaryStr) {
     if (!text) return { error: '翻訳エラー' };
     if (isRecentlyFailedTranslation(text)) return { error: '翻訳エラー' };
 
-    const cached = getCachedTranslation(text);
+    const context = getTranslationCacheContext({ translator: 'google', dictionary: dictionaryStr || '' });
+    const cached = getCachedTranslation(text, context);
     if (cached) return { translation: cached };
 
     let processedText = await preprocessForYouTubeChat(text);
@@ -220,7 +318,7 @@ async function translateDirectWithGoogle(text, dictionaryStr) {
     const result = await translateWithGoogle(processedText);
     if (result && result.translation) {
         postprocessJapanese(result);
-        cacheTranslation(text, result.translation);
+        cacheTranslation(text, result.translation, context);
         return result;
     }
 

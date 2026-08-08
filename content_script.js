@@ -5,6 +5,7 @@
 
 let settings = {};
 let chatObserver = null;
+let chatMutationBatcher = null;
 let ngUserList = [];
 let ngWordList = [];
 let flowContainer = null;
@@ -50,7 +51,7 @@ const DEFAULTS = {
 };
 
 function updateNgLists() {
-    ngUserList = settings.ngUsers ? settings.ngUsers.split('\n').map(u => u.trim()).filter(Boolean) : [];
+    ngUserList = new Set(settings.ngUsers ? settings.ngUsers.split('\n').map(u => u.trim()).filter(Boolean) : []);
     ngWordList = settings.ngWords ? settings.ngWords.split('\n').map(w => w.trim()).filter(Boolean) : [];
 }
 
@@ -209,7 +210,7 @@ function parseComment(node) {
 }
 
 function isCommentFiltered(comment) {
-    if (ngUserList.length > 0 && ngUserList.includes(comment.authorName)) return true;
+    if (ngUserList.size > 0 && ngUserList.has(comment.authorName)) return true;
     if (ngWordList.length > 0 && comment.text) {
         for (const word of ngWordList) {
             if (comment.text.includes(word)) return true;
@@ -532,6 +533,7 @@ function processNewCommentNode(node) {
     node.dataset.processed = 'true';
 
     const comment = parseComment(node);
+    const commentGeneration = pageStateGeneration;
     if (!comment) return;
 
     if (isCommentFiltered(comment)) {
@@ -542,6 +544,7 @@ function processNewCommentNode(node) {
     // 直接監視モード（このスクリプト自身がwatchページで動いている）では
     // メッセージングを介さず直接フロー描画へ渡す
     const sendToFlow = (translatedText = '') => {
+        if (commentGeneration !== pageStateGeneration) return;
         if (settings.enableFlowComments) {
             comment.translated = translatedText;
             handleFlowCommentData(comment);
@@ -552,19 +555,21 @@ function processNewCommentNode(node) {
     const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf]/.test(comment.text);
 
     // 翻訳対象となる意味のある文字が含まれているか
-    const hasForeignCharacters = /[a-zA-Z0-9\uac00-\ud7a3\u0400-\u04ff\u0e00-\u0e7f\xc0-\u017f]/.test(comment.text);
+    const hasForeignCharacters = hasTranslatableForeignText(comment.text);
+    const hasTranslatableForeign = hasForeignCharacters;
 
     // 翻訳を実行する条件
     const shouldTranslate = settings.enableInlineTranslation &&
         comment.text &&
         !comment.text.startsWith('[') &&
         !comment.text.startsWith('<') &&
-        !hasJapanese &&
+        (!hasJapanese || hasTranslatableForeign) &&
         hasForeignCharacters &&
         !shouldSkipTranslation(comment.text);
 
     if (shouldTranslate) {
         enqueueTranslation(comment.text, (result) => {
+            if (commentGeneration !== pageStateGeneration) return;
             if (result && result.error) {
                 displayInlineTranslation(node, `[${result.error}]`, true);
             } else if (result && result.translation) {
@@ -603,47 +608,18 @@ function displayInlineTranslation(node, text, isError = false) {
 
 function startChatObserver(chatItemsEl) {
     if (chatObserver) chatObserver.disconnect();
-    const targetNodeTypes = [
-        'YT-LIVE-CHAT-TEXT-MESSAGE-RENDERER',
-        'YT-LIVE-CHAT-PAID-MESSAGE-RENDERER',
-        'YT-LIVE-CHAT-MEMBERSHIP-ITEM-RENDERER',
-        'YT-LIVE-CHAT-PAID-STICKER-RENDERER',
-        'YT-LIVE-CHAT-MEMBERSHIP-GIFT-PURCHASE-RENDERER',
-        'YT-LIVE-CHAT-GIFT-MEMBERSHIP-RECEIVED-RENDERER'
-    ];
+    if (chatMutationBatcher) chatMutationBatcher.clear();
+    const MAX_BURST_COMMENTS = window.innerWidth <= 768 ? 10 : 20;
 
-    // VOD・シーク時のバースト読み込み制御用変数
-    const MAX_BURST_COMMENTS = 5; // 一度に処理・フローに流す最大件数
+    chatMutationBatcher = createChatMutationBatcher(
+        MAX_BURST_COMMENTS,
+        processNewCommentNode,
+        callback => requestAnimationFrame(callback)
+    );
 
     chatObserver = new MutationObserver(mutations => {
         if (document.hidden) return;
-        // mutations 内のすべての追加ノードを平坦化して収集
-        const allAddedNodes = [];
-        for (const m of mutations) {
-            for (const node of m.addedNodes) {
-                if (node.nodeType === 1 && targetNodeTypes.includes(node.tagName.toUpperCase())) {
-                    allAddedNodes.push(node);
-                }
-            }
-        }
-
-        if (allAddedNodes.length === 0) return;
-
-        // 大量に追加された場合（VODシーク時など）は、最新の数件だけを処理する
-        let nodesToProcess = allAddedNodes;
-        if (allAddedNodes.length > MAX_BURST_COMMENTS) {
-            // console.log(`[YLC Enhancer] Burst detected: ${allAddedNodes.length} comments. Throttling to ${MAX_BURST_COMMENTS}.`);
-            // 大量に来た場合でもインライン表示用には最低限処理を通すが、
-            // フローコメント用のフラグ（isBurst）を立てて流量を制限する
-            nodesToProcess = allAddedNodes.slice(-MAX_BURST_COMMENTS);
-
-            // スキップされたノードのインライン翻訳だけは無理せず非同期で流す（現状は負荷を下げるため完全スキップも手）
-            // ここではパフォーマンス優先で、間引かれたものは processNewCommentNode にすら渡さない
-        }
-
-        nodesToProcess.forEach(node => {
-            processNewCommentNode(node);
-        });
+        chatMutationBatcher.push(mutations);
     });
     chatObserver.observe(chatItemsEl, { childList: true });
 }
@@ -661,6 +637,7 @@ function hasUsableVisibleChat() {
 }
 
 function setupHiddenChat() {
+    if (document.hidden) return;
     const urlParams = new URLSearchParams(window.location.search);
     const videoId = urlParams.get('v');
     if (!videoId) return;
@@ -910,6 +887,7 @@ function cleanupWhenLeavingWatch() {
         chatObserver.disconnect();
         chatObserver = null;
     }
+    if (chatMutationBatcher) chatMutationBatcher.clear();
     if (initializationRetryTimer) {
         clearInterval(initializationRetryTimer);
         initializationRetryTimer = null;
@@ -917,7 +895,7 @@ function cleanupWhenLeavingWatch() {
     clearManagedTimeouts();
     translationQueue.length = 0;
     processedCommentIds.clear();
-    if (typeof lanes !== 'undefined') lanes.clear();
+    if (typeof clearFlowComments === 'function') clearFlowComments();
     if (flowContainer) {
         flowContainer.remove();
         flowContainer = null;
@@ -953,20 +931,26 @@ function enqueueTranslation(text, callback) {
     if (translationQueue.length >= MAX_QUEUE_SIZE) {
         translationQueue.shift(); // 古いリクエストを破棄
     }
-    translationQueue.push({ text, callback });
+    translationQueue.push({ text, callback, generation: pageStateGeneration });
     processTranslationQueue();
 }
 
 function processTranslationQueue() {
+    if (document.hidden) {
+        translationQueue.length = 0;
+        return;
+    }
     while (translationActive < MAX_CONCURRENT_TRANSLATIONS && translationQueue.length > 0) {
-        const { text, callback } = translationQueue.shift();
+        const { text, callback, generation } = translationQueue.shift();
+        if (generation !== pageStateGeneration) continue;
         // 直近で失敗したテキストは連続再試行しない
         if (isRecentlyFailedTranslation(text)) {
             callback({ error: '翻訳エラー' });
             continue;
         }
         // 同一テキストの再翻訳はSWを起こさずローカルキャッシュで返す
-        const cached = getCachedTranslation(text);
+        const cacheContext = getTranslationCacheContext(settings);
+        const cached = getCachedTranslation(text, cacheContext);
         if (cached) {
             callback({ translation: cached });
             continue;
@@ -979,10 +963,17 @@ function processTranslationQueue() {
             } else {
                 // background不達時はGoogle翻訳のみcontent scriptから直接実行する
                 result = await translateDirectWithGoogle(text, settings.dictionary);
+                if (result?.translation) result.translator = 'google';
             }
             translationActive--;
+            if (generation !== pageStateGeneration) {
+                if (translationQueue.length > 0) setManagedTimeout(processTranslationQueue, THROTTLE_INTERVAL);
+                return;
+            }
             if (result && result.error) markTranslationFailed(text);
-            if (result && result.translation) cacheTranslation(text, result.translation);
+            if (result && result.translation) {
+                cacheTranslation(text, result.translation, getTranslationCacheContext(settings, result.translator));
+            }
             callback(result);
             if (translationQueue.length > 0) {
                 setManagedTimeout(processTranslationQueue, THROTTLE_INTERVAL);
@@ -1077,7 +1068,11 @@ function applySettingsUpdate(newSettings, tabState, persist = false) {
                 flowBtn.classList.toggle('enabled', settings.enableFlowComments);
             }
             // フローON切替時にhidden iframe要否を再評価（OFF時は次回ナビゲーションで消える）
-            if (settings.enableFlowComments && !hiddenChatIframe && location.pathname.startsWith('/watch')) {
+            if (!settings.enableFlowComments) {
+                removeHiddenChat();
+                resetChatObservationState();
+                if (typeof clearFlowComments === 'function') clearFlowComments();
+            } else if (!hiddenChatIframe && location.pathname.startsWith('/watch') && !document.hidden) {
                 setupHiddenChat();
             }
         }
@@ -1284,8 +1279,14 @@ async function main() {
             flowBtn.title = `コメント表示: ${settings.enableFlowComments ? 'オン' : 'オフ'}`;
             flowBtn.classList.toggle('enabled', settings.enableFlowComments);
         }
-        if (uiUpdateFlow && settings.enableFlowComments && !hiddenChatIframe && location.pathname.startsWith('/watch')) {
-            setupHiddenChat();
+        if (uiUpdateFlow) {
+            if (!settings.enableFlowComments) {
+                removeHiddenChat();
+                resetChatObservationState();
+                if (typeof clearFlowComments === 'function') clearFlowComments();
+            } else if (!hiddenChatIframe && location.pathname.startsWith('/watch') && !document.hidden) {
+                setupHiddenChat();
+            }
         }
     });
 
@@ -1322,6 +1323,8 @@ async function main() {
             return;
         }
         pageStateGeneration++;
+        // 旧動画で待機中の翻訳は新動画へ持ち越さない。実行中結果はgeneration検証で破棄する。
+        translationQueue.length = 0;
         isInitialized = false;
         startInitRetryLoop();
         setupHiddenChat();
@@ -1346,6 +1349,23 @@ async function main() {
             if (document.hidden) return;
             if (location.href !== lastNavigationHref) handleNavigation();
         }, 1000);
+    }
+    if (!window.ylcVisibilityListener) {
+        window.ylcVisibilityListener = true;
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                translationQueue.length = 0;
+                if (chatMutationBatcher) chatMutationBatcher.clear();
+                resetChatObservationState();
+                removeHiddenChat();
+                if (typeof clearFlowComments === 'function') clearFlowComments();
+                return;
+            }
+            if (location.pathname.startsWith('/watch')) {
+                startInitRetryLoop();
+                setupHiddenChat();
+            }
+        });
     }
     setupHiddenChat();
     startInitRetryLoop();

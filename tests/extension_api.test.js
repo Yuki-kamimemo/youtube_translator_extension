@@ -13,6 +13,7 @@ const assert = require('assert');
 
 function makeChromeMock({ syncFails = false, tabId = null } = {}) {
     const stores = { sync: {}, local: {} };
+    const storageListeners = [];
     const chromeObj = {
         runtime: {
             id: 'test-extension-id',
@@ -28,7 +29,13 @@ function makeChromeMock({ syncFails = false, tabId = null } = {}) {
             onMessage: { addListener() {} },
         },
         storage: {
-            onChanged: { addListener() {} },
+            onChanged: {
+                addListener(listener) { storageListeners.push(listener); },
+                removeListener(listener) {
+                    const index = storageListeners.indexOf(listener);
+                    if (index >= 0) storageListeners.splice(index, 1);
+                },
+            },
         },
     };
     const failCall = (cb) => {
@@ -36,7 +43,7 @@ function makeChromeMock({ syncFails = false, tabId = null } = {}) {
         cb();
         chromeObj.runtime.lastError = undefined;
     };
-    const makeArea = (store, opts = {}) => ({
+    const makeArea = (areaName, store, opts = {}) => ({
         get(arg, cb) {
             if (opts.fail) return failCall(cb);
             let result = {};
@@ -51,8 +58,13 @@ function makeChromeMock({ syncFails = false, tabId = null } = {}) {
         },
         set(values, cb) {
             if (opts.fail) return failCall(cb);
+            const changes = {};
+            for (const [key, value] of Object.entries(values)) {
+                changes[key] = { oldValue: store[key], newValue: value };
+            }
             Object.assign(store, values);
             cb();
+            for (const listener of [...storageListeners]) listener(changes, areaName);
         },
         remove(keys, cb) {
             if (opts.fail) return failCall(cb);
@@ -60,8 +72,8 @@ function makeChromeMock({ syncFails = false, tabId = null } = {}) {
             cb();
         },
     });
-    chromeObj.storage.sync = makeArea(stores.sync, { fail: syncFails });
-    chromeObj.storage.local = makeArea(stores.local);
+    chromeObj.storage.sync = makeArea('sync', stores.sync, { fail: syncFails });
+    chromeObj.storage.local = makeArea('local', stores.local);
     return { chromeObj, stores };
 }
 
@@ -117,13 +129,72 @@ async function run() {
 
     // 3. 状態キー解決: タブIDあり → tabState
     {
+        const { chromeObj, stores } = makeChromeMock();
+        const api = loadYlcApi(chromeObj);
+        const alreadyRunningApi = loadYlcApi(chromeObj);
+        await api.settingsGet({ translator: 'google' });
+        await alreadyRunningApi.settingsGet({ translator: 'google' });
+        const originalSyncSet = chromeObj.storage.sync.set;
+        chromeObj.storage.sync.set = (values, cb) => {
+            chromeObj.runtime.lastError = { message: 'quota exceeded' };
+            cb();
+            chromeObj.runtime.lastError = undefined;
+        };
+        await api.settingsSet({ translator: 'lmstudio' });
+        assert.strictEqual(api.settingsAreaName(), 'local');
+        assert.strictEqual(stores.local.ylcSettingsArea, 'local');
+        assert.strictEqual(stores.local.translator, 'lmstudio');
+        const runningContextReloaded = await alreadyRunningApi.settingsGet({ translator: 'x' });
+        assert.strictEqual(alreadyRunningApi.settingsAreaName(), 'local');
+        assert.strictEqual(runningContextReloaded.translator, 'lmstudio');
+        chromeObj.storage.sync.set = originalSyncSet;
+        stores.sync.translator = 'google';
+        const reloadedApi = loadYlcApi(chromeObj);
+        const reloaded = await reloadedApi.settingsGet({ translator: 'x' });
+        assert.strictEqual(reloadedApi.settingsAreaName(), 'local');
+        assert.strictEqual(reloaded.translator, 'lmstudio');
+        assert.strictEqual(stores.local.ylcSettingsArea, 'local');
+        console.log('OK: 実行時sync失敗のlocal切替マーカー');
+    }
+
+    // resolve中の小さいprobe成功が、別contextのquota fallbackを巻き戻さない
+    {
+        const { chromeObj, stores } = makeChromeMock();
+        let releaseProbe;
+        const originalSyncSet = chromeObj.storage.sync.set;
+        chromeObj.storage.sync.set = (values, cb) => {
+            if (Object.prototype.hasOwnProperty.call(values, 'ylcProbe')) {
+                releaseProbe = () => originalSyncSet(values, cb);
+                return;
+            }
+            chromeObj.runtime.lastError = { message: 'quota exceeded' };
+            cb();
+            chromeObj.runtime.lastError = undefined;
+        };
+        const resolvingApi = loadYlcApi(chromeObj);
+        const resolvingRead = resolvingApi.settingsGet({ translator: 'default' });
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        const writerApi = loadYlcApi(chromeObj);
+        stores.local.ylcSettingsArea = 'local';
+        await writerApi.settingsSet({ translator: 'lmstudio' });
+        releaseProbe();
+        const result = await resolvingRead;
+        assert.strictEqual(resolvingApi.settingsAreaName(), 'local');
+        assert.strictEqual(result.translator, 'lmstudio');
+        assert.strictEqual(stores.local.ylcSettingsArea, 'local');
+        console.log('OK: resolve中のlocal切替をsync probeが巻き戻さない');
+    }
+
+    // 4. 状態キー解決: タブIDあり → tabState
+    {
         const { chromeObj } = makeChromeMock({ tabId: 42 });
         const api = loadYlcApi(chromeObj);
         assert.strictEqual(await api.resolveStateKey(), 'tabState_42');
         console.log('OK: 状態キー解決（tabState）');
     }
 
-    // 4. 状態キー解決: タブIDなし＋vパラメータあり → sessionState
+    // 5. 状態キー解決: タブIDなし＋vパラメータあり → sessionState
     {
         const { chromeObj } = makeChromeMock({ tabId: null });
         const api = loadYlcApi(chromeObj, { search: '?v=abc123' });

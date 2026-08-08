@@ -18,6 +18,7 @@ function initSettingsPanel(root = document, options = {}) {
         lmstudioModel: getById('lmstudioModel'),
         refreshLmstudioModelsBtn: getById('refreshLmstudioModelsBtn'),
         lmstudioModelsStatus: getById('lmstudioModelsStatus'),
+        translateGemmaPresetStatus: getById('translateGemmaPresetStatus'),
         lmstudioModelActive: getById('lmstudioModelActive'),
         lmstudioStatus: getById('lmstudioStatus'),
         lmstudioConfigGroup: getById('lmstudio-config-group'),
@@ -94,6 +95,7 @@ function initSettingsPanel(root = document, options = {}) {
     let persistViaParent = false;
     let latestLmstudioModelRequestId = 0;
     let cachedLmstudioModels = [];
+    let cachedLmstudioModelDetails = {};
 
     // iOS/iPadOS相当環境ではlocalhostのLM Studioに到達できないため選択不可にする
     const lmstudioSupported = !ylcApi.isAppleTouchEnvironment();
@@ -223,6 +225,30 @@ function initSettingsPanel(root = document, options = {}) {
         elements.lmstudioModelsStatus.style.color = color;
     }
 
+    function isTranslateGemmaModel(modelId) {
+        const normalized = String(modelId || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        return normalized.includes('translategemma') &&
+            /(?:^|-)4b(?:-|$)/.test(normalized) &&
+            /(?:^|-)it(?:-|$)/.test(normalized);
+    }
+
+    function updateTranslateGemmaPresetStatus(modelId) {
+        const status = elements.translateGemmaPresetStatus;
+        if (!status) return;
+        if (!isTranslateGemmaModel(modelId)) {
+            status.hidden = true;
+            status.textContent = '';
+            return;
+        }
+        const quantization = cachedLmstudioModelDetails[modelId]?.quantization || '';
+        const q4ks = /^Q4_K_S$/i.test(quantization) ||
+            /(?:^|[^a-z0-9])q4[_-]k[_-]s(?:[^a-z0-9]|$)/i.test(String(modelId || ''));
+        status.hidden = false;
+        status.textContent = q4ks
+            ? 'TranslateGemma最適化: 適用中（Q4_K_S検証対象）\n原文言語: 自動判定 / 翻訳先: 日本語\nLM Studio側のPrompt Template設定が必要です'
+            : 'TranslateGemma最適化: 適用中（この量子化形式は保証対象外）\n原文言語: 自動判定 / 翻訳先: 日本語\nLM Studio側のPrompt Template設定が必要です';
+    }
+
     function setLmstudioModelOptions(models, selectedModel, statusMessage) {
         if (!elements.lmstudioModel) return;
         const currentValue = selectedModel || elements.lmstudioModel.value || defaults.lmstudioModel;
@@ -254,6 +280,7 @@ function initSettingsPanel(root = document, options = {}) {
         if (!elements.lmstudioModel.value && elements.lmstudioModel.options.length) {
             elements.lmstudioModel.value = elements.lmstudioModel.options[0].value;
         }
+        updateTranslateGemmaPresetStatus(elements.lmstudioModel.value);
         setLmstudioModelsStatus(statusMessage || '');
     }
 
@@ -271,6 +298,7 @@ function initSettingsPanel(root = document, options = {}) {
 
             if (!messageResult.ok) {
                 cachedLmstudioModels = [];
+                cachedLmstudioModelDetails = {};
                 setLmstudioModelOptions([], currentValue, `エラー: ${messageResult.reason}`);
                 setLmstudioModelsStatus(`エラー: ${messageResult.reason}`, '#f44336');
                 return;
@@ -280,11 +308,13 @@ function initSettingsPanel(root = document, options = {}) {
             if (res?.ok) {
                 const models = res.models || [];
                 cachedLmstudioModels = models;
+                cachedLmstudioModelDetails = res.modelDetails || {};
                 const message = models.length ? `${models.length}件のモデルを取得` : '登録済みモデルがありません';
                 setLmstudioModelOptions(models, currentValue, message);
                 if (!currentValue && models.length) debouncedSaveSettings();
             } else {
                 cachedLmstudioModels = [];
+                cachedLmstudioModelDetails = {};
                 setLmstudioModelOptions([], currentValue, `エラー: ${res?.error || '接続失敗'}`);
                 setLmstudioModelsStatus(`エラー: ${res?.error || '接続失敗'}`, '#f44336');
             }
@@ -373,7 +403,10 @@ function initSettingsPanel(root = document, options = {}) {
         elements.refreshLmstudioModelsBtn.addEventListener('click', () => refreshLmstudioModels());
     }
     if (elements.lmstudioModel) {
-        elements.lmstudioModel.addEventListener('change', debouncedSaveSettings);
+        elements.lmstudioModel.addEventListener('change', () => {
+            updateTranslateGemmaPresetStatus(elements.lmstudioModel.value);
+            debouncedSaveSettings();
+        });
     }
     
     elements.translator.addEventListener('change', (e) => {
