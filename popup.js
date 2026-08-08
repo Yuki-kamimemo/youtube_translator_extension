@@ -431,7 +431,7 @@ function initSettingsPanel(root = document, options = {}) {
             const status = elements.lmstudioStatus;
 
             if (status) status.textContent = active ? '起動中...' : '停止中...';
-            
+
             ylcApi.sendMessage({
                 action: 'lmstudioSetActive', active, model
             }).then((messageResult) => {
@@ -452,11 +452,11 @@ function initSettingsPanel(root = document, options = {}) {
     }
 
     if (elements.opacity) {
-        elements.opacity.addEventListener('input', (e) => { 
-            if (elements.opacityValue) elements.opacityValue.textContent = e.target.value; 
+        elements.opacity.addEventListener('input', (e) => {
+            if (elements.opacityValue) elements.opacityValue.textContent = e.target.value;
         });
     }
-    
+
     const unsubscribeStorageChanged = ylcApi.onStorageChanged((changes, area) => {
         if (area !== 'sync' && area !== 'local') return;
 
